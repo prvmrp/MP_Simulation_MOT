@@ -1,5 +1,6 @@
 import numpy as np
 from sys import argv
+import os
 
 # --- 1. PHYSICAL CONSTANTS AND MOT PARAMETERS ---
 hbar = 1.054e-34  # Reduced Planck constant (J*s)
@@ -18,15 +19,16 @@ delta = -2.5 * Gamma # Laser detuning (rad/s)
 Isat = 16.7       # Saturation intensity (W/m^2)
 I_infinity = 0.5 * Isat # Beam intensity before entering the cloud (W/m^2)
 
-# Simulation parameters
+# Simulation parameters (RENAMED to res_etc. where applicable)
 N_atoms = int(argv[1]) # Number of atoms (Kept at 1,000)
 dt = 3.0e-6
 n_steps = 6000 
 n_save = 50
 SAVE_INTERVAL = n_steps // n_save
-T_init = float(argv[3]) * 1e-6 # T_init in uK
-V_init = np.sqrt(k_B * T_init / m_atom)
-R_init = float(argv[4])
+T_res_uK = float(argv[3]) # T_init in uK -> T_res_uK
+T_res = T_res_uK * 1e-6 # Convert to K for physics
+V_res = np.sqrt(k_B * T_res / m_atom) # V_init -> V_res
+R_res = float(argv[4]) # R_init -> R_res
 
 # Mapping for transitions (q) and beams (alpha)
 Q_TRANSITIONS = {-1: 'sigma_minus', 0: 'pi', 1: 'sigma_plus'}
@@ -37,12 +39,11 @@ BEAM_DIRECTIONS = {
     ('z', '+'): (2, 1), ('z', '-'): (2, -1),
 }
 
-# --- 2. CORE KINETIC MODEL FUNCTIONS (FULL IMPLEMENTATION) ---
+# --- 2. CORE KINETIC MODEL FUNCTIONS (UNCHANGED) ---
 
 def calculate_magnetic_field_vectorized(r_positions):
     """
     Computes B(r) magnitude and relevant B-field factors for all atoms.
-    B_factor corresponds to the (alpha' * B' / 2*B(r)) term from Eq. 4.
     """
     x, y, z = r_positions.T
     
@@ -51,8 +52,8 @@ def calculate_magnetic_field_vectorized(r_positions):
     
     # Magnetic factor for polarization fractions (alpha' * B' / 2*B(r))
     B_factor = np.zeros_like(r_positions)
-    B_factor[:, 0] = 2 * x / (2 * B_mag)     # x-axis factor (alpha'=x)
-    B_factor[:, 1] = y / (2 * B_mag)     # y-axis factor (alpha'=y)
+    B_factor[:, 0] = 2 * x / (2 * B_mag)    # x-axis factor (alpha'=x)
+    B_factor[:, 1] = y / (2 * B_mag)    # y-axis factor (alpha'=y)
     B_factor[:, 2] = z / (2 * B_mag) # z-axis factor (alpha'=2z)
     
     # Handle division by zero at origin (use a tiny value)
@@ -60,7 +61,6 @@ def calculate_magnetic_field_vectorized(r_positions):
     B_factor[B_mag == 1e-12] = 0
     B_factor *= B_prime
     
-    # N_atoms update (Crucial: B_factor and B_mag must match N_atoms)
     if B_mag.shape[0] != N_atoms:
         raise ValueError(f"B_mag shape ({B_mag.shape[0]}) does not match N_atoms ({N_atoms}).")
     
@@ -250,11 +250,81 @@ def integrate_motion_verlet(positions, velocities, dt, m_atom, get_forces_func):
     
     return positions_n1, velocities_n1
 
-# --- 4. SIMULATION EXECUTION ---
+# -------------------------------------------------------------
+## 💾 Data Saving Function (UPDATED)
+# -------------------------------------------------------------
+
+def save_simulation_data(time_history, r_rms_history, v_rms_history, e_k_history, pos_history, vel_history):
+    """
+    Creates a dedicated folder based on simulation parameters, writes a 
+    parameters.txt file, and saves the history arrays to an NPZ file.
+    """
+    
+    # Format parameters for a safe folder name: N_Bprime_T_res_R_res
+    N_str = f"{N_atoms:.1e}"
+    B_str = f"{B_prime:.1e}"
+    T_res_str = f"{T_res_uK:.1e}"
+    R_res_str = f"{R_res:.1e}"
+    
+    # Create the directory path (RENAMED to T_res and R_res in folder name)
+    folder_name = f"res_N={N_str}_B={B_str}T_T={T_res_str}uK_R={R_res_str}m"
+    
+    try:
+        os.makedirs(folder_name, exist_ok=True)
+    except Exception as e:
+        print(f"Error creating directory {folder_name}: {e}")
+        return
+        
+    # Define file paths
+    npz_path = os.path.join(folder_name, 'mot_data_full.npz')
+    params_path = os.path.join(folder_name, 'parameters.txt')
+
+    # 1. Save constants and parameters to parameters.txt (UPDATED references)
+    with open(params_path, 'w') as f:
+        f.write("--- PHYSICAL CONSTANTS ---\n")
+        f.write(f"Reduced Planck constant (hbar): {hbar:.2e} J*s\n")
+        f.write(f"Speed of light (c): {c:.1e} m/s\n")
+        f.write(f"Laser wavelength (lambda_L): {lambda_L:.2e} m\n")
+        f.write(f"Natural linewidth (Gamma): {Gamma:.2e} rad/s\n")
+        f.write(f"Atom mass (m_atom): {m_atom:.2e} kg\n")
+        f.write(f"Boltzmann constant (k_B): {k_B:.2e} J/K\n")
+        f.write("\n--- MOT PARAMETERS ---\n")
+        f.write(f"Magnetic field gradient (B_prime): {B_prime} T/m\n")
+        f.write(f"Gyromagnetic ratio (mu): {mu:.2e} Hz/T\n")
+        f.write(f"Laser detuning (delta): {delta:.2e} rad/s\n")
+        f.write(f"Saturation intensity (Isat): {Isat:.1f} W/m^2\n")
+        f.write(f"Beam intensity (I_infinity): {I_infinity:.1f} W/m^2\n")
+        f.write("\n--- SIMULATION PARAMETERS ---\n")
+        f.write(f"Number of atoms (N_atoms): {N_atoms}\n")
+        f.write(f"Time step (dt): {dt:.2e} s\n")
+        f.write(f"Number of steps (n_steps): {n_steps}\n")
+        f.write(f"Initial/Resonance Temperature (T_res): {T_res_uK} uK ({T_res:.2e} K)\n")
+        f.write(f"Initial/Resonance Velocity (V_res_RMS): {V_res:.2e} m/s\n")
+        f.write(f"Initial/Resonance Radius (R_res_RMS): {R_res:.2e} m\n")
+        f.write(f"Save Interval: {SAVE_INTERVAL} steps\n")
+        
+    # 2. Save history data to NPZ file (UNCHANGED)
+    np.savez(
+        npz_path, 
+        time=np.array(time_history),
+        r_rms=np.array(r_rms_history),
+        v_rms=np.array(v_rms_history),
+        e_k=np.array(e_k_history),
+        positions=np.array(pos_history),
+        velocities=np.array(vel_history),
+        dt=dt,
+        save_interval=SAVE_INTERVAL
+    )
+
+    print(f"\nFinal data and parameters saved in the '{folder_name}' directory.")
+
+# -------------------------------------------------------------
+# --- 4. SIMULATION EXECUTION (REVISED) ---
+# -------------------------------------------------------------
 
 if __name__ == "__main__":
     
-    # Helper function to consolidate full force calculations for the integrator
+    # Helper function to consolidate full force calculations for the integrator (UNCHANGED)
     def get_forces_full(positions, velocities):
         # 1. Get Magnetic Field Vectors
         B_mag, B_factor = calculate_magnetic_field_vectorized(positions)
@@ -270,13 +340,11 @@ if __name__ == "__main__":
         
         return F_tr + F_diff
 
-    # Initial state (MODIFIED for low density (larger R) and high velocity (hotter V))
-    # Density reduction factor ~10: R increase by ~2.15
-    positions = np.zeros((N_atoms, 3)) + np.random.randn(N_atoms, 3) * R_init  
-    # Velocity increase factor 10: 5e-1 * 10 = 5.0
-    velocities = np.zeros((N_atoms, 3)) + np.random.randn(N_atoms, 3) * V_init
+    # Initial state (USING RENAMED variables R_res and V_res)
+    positions = np.zeros((N_atoms, 3)) + np.random.randn(N_atoms, 3) * R_res
+    velocities = np.zeros((N_atoms, 3)) + np.random.randn(N_atoms, 3) * V_res
 
-    # Data collection lists
+    # Data collection lists (UNCHANGED)
     time_history = []
     r_rms_history = []
     v_rms_history = []
@@ -286,11 +354,11 @@ if __name__ == "__main__":
     vel_history = []
 
     print(f"Starting LOW-DENSITY (N={N_atoms}) MOT Simulation...")
-    print("Initial Conditions: Very Hot (5 m/s RMS) and Large (1.1 mm RMS).")
+    print(f"Initial Conditions (T_res): {T_res_uK} uK ({V_res:.2e} m/s RMS) and (R_res): {R_res:.2e} m RMS.")
 
     for step in range(n_steps):
         
-        # Integrate one time step
+        # Integrate one time step (UNCHANGED)
         positions, velocities = integrate_motion_verlet(
             positions, 
             velocities, 
@@ -299,12 +367,11 @@ if __name__ == "__main__":
             get_forces_full
         )
         
-        # Record history
+        # Record history (UNCHANGED)
         current_time = step * dt
         r_rms = np.sqrt(np.mean(np.sum(positions**2, axis=1)))
         v_rms = np.sqrt(np.mean(np.sum(velocities**2, axis=1)))
         
-        # Calculate Total Kinetic Energy (1/2 * m * SUM(v^2))
         total_kinetic_energy = 0.5 * m_atom * np.sum(velocities**2)
         
         time_history.append(current_time)
@@ -319,18 +386,9 @@ if __name__ == "__main__":
         if step % 1000 == 0: 
             print(f"Time {current_time:.2e} s: R_RMS = {r_rms:.2e} m, V_RMS = {v_rms:.2e} m/s")
 
-    # --- FINAL DATA SAVING ---
-    np.savez(
-        'mot_data_full.npz', 
-        time=np.array(time_history),
-        r_rms=np.array(r_rms_history),
-        v_rms=np.array(v_rms_history),
-        e_k=np.array(e_k_history),
-        positions=np.array(pos_history),
-        velocities=np.array(vel_history),
-        dt=dt,
-        save_interval=SAVE_INTERVAL
-    )
-
     print("\nSimulation Finished.")
-    print(f"Final data saved to 'mot_data_full.npz'.")
+    
+    # --- FINAL DATA SAVING CALL ---
+    save_simulation_data(
+        time_history, r_rms_history, v_rms_history, e_k_history, pos_history, vel_history
+    )
