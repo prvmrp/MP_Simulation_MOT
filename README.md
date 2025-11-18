@@ -1,86 +1,122 @@
-# 3D Vectorized MOT Simulation Project Workflow
+# Magneto-Optical Trap (MOT) Simulation and Analysis
 
-This project implements a **fully vectorized simulation** of a Magneto-Optical Trap (MOT) using the full kinetic model, designed for computational efficiency on high-performance clusters. The workflow is optimized for retrieving and analyzing large simulation datasets locally.
+This repository contains two primary Python scripts for modeling and analyzing the dynamics of atoms within a Magneto-Optical Trap (MOT), including the effects of external magnetic fields, laser cooling, trapping forces, and photon recoil (diffusion).
 
----
+The simulation implements a kinetic model using Velocity Verlet integration for the motion of $N$ atoms, while the analysis tool allows for visualization and characterization of the results.
 
-## 🔬 Project Files
+## 1. Prerequisites
 
-| **File** | **Role** | **Description** |
-| :--- | :--- | :--- |
-| **`mot_simulation_full.py`** | **Simulation** (Run Remotely) | Runs the $N$-body simulation (Doppler, Zeeman, Attenuation). Saves output to `mot_data_full.npz`. |
-| **`mot_post_processor_improved.py`** | **Post-Processing** (Run Locally) | Loads data, generates **3 verification figures**, and creates the **evolution GIF**. Includes the crucial **SCP utility** for automated data retrieval. |
-
----
-
-## 🧪 Simulation Details: Low-Density Mode
-
-The current simulation parameters in **`mot_simulation_full.py`** are configured for the **Low-Density (Spherical) MOT** regime. This allows observation of the ideal cooling and confinement phase without being dominated by collective light attenuation.
-
-* **Atom Number ($N$):** 1,000
-* **Initial Velocity:** Very High ($\mathbf{5.0\ \text{m/s}}$ RMS)
-* **Expected Result:** Rapid cooling followed by stabilization into a small, nearly **spherical** atom cloud, matching typical laboratory observations of non-dense MOTs.
-
----
-
-## 🚀 Step-by-Step Workflow Guide
-
-### Step 1: Run the Simulation (Remote Cluster)
-
-Execute the simulation script on your cluster environment. This will create the data file defined in your configuration.
-
-# Execute remotely (e.g., via a SLURM job)
-
-```python
-**`python mot_simulation_full.py`**
-```
-
-### Step 2: Local Setup and Configuration (Crucial Step)
-
-Before analysis, you must configure your access details within the post-processor script.
-
-Action Required: Open mot_post_processor_improved.py and edit the variables in the >>> USER-DEFINED CLUSTER SETTINGS <<< block:
-Python
-
-# USER-DEFINED CLUSTER SETTINGS
-- CLUSTER_USER = "your_username"        # e.g., "leona"
-- CLUSTER_HOST = "cluster.server.edu"   # e.g., "login.cluster.uni"
-- REMOTE_FILE_PATH = "/path/to/simulation/results/mot_data_full.npz" 
-
-### Step 3: Data Retrieval and Post-Processing
-
-You have two options for running the post-processor:
-
-- **Option A**: Automated Download (Recommended)
-
-If the data file (**`mot_data_full.npz`**) is not present locally, run the script with the download argument. This triggers the Python-based SCP transfer using your configured variables. It downloads data and starts analysis immediately
-
-```python
-python mot_post_processor_improved.py download
-```
-
-(Requires: SSH keys to be configured for password-less access or manual password input.)
-
-- **Option B**: Local Analysis Only
-
-If you manually copied the data file already, just run the script normally.
-
-```python
-python mot_post_processor_improved.py
-```
-
-Analyzes data already present in the local directory.
-
-### 🛠️ Setup, Dependencies, and Verification
-
-This project requires the following Python libraries for post-processing:
+Both scripts require Python 3 and the following scientific libraries:
 
 ```bash
-pip install numpy matplotlib pillow`
+pip install numpy matplotlib imageio
+````
+
+**Note:** The plotting script uses `matplotlib`'s animation functionality, which may require the `pillow` library (installed with the command above, or separately via `pip install pillow`) or a system-wide video encoder (like `ffmpeg`) to save the GIF successfully.
+
+## 2\. Simulation Script (`mot_simulation.py`)
+
+This script models the 3D motion of atoms in a MOT, including the effects of:
+
+  * **Trapping Force** (Zeeman-shifted resonance, proportional to position).
+  * **Damping Force** (Doppler effect, proportional to velocity).
+  * **Diffusion Force** (Stochastic photon recoil).
+  * **Attenuation** (Simplified calculation of optical depth within the cloud).
+
+### 2.1. Execution
+
+The simulation must be run from the command line, providing four numerical input parameters that define the initial conditions and system setup.
+
+**Usage:**
+
+```bash
+python mot_simulation.py N B_prime T_res_uK R_res
 ```
 
-Output File	Key Verification Check
-`Figure 1`	Stability and Cooling Rate
-`Figure 2`	Final Cloud Shape (expected to be spherical for the default low-OD parameters)
-`Figure 3`	Phase-Space Damping and Final Temperature
-`mot_evolution.gif`	Visual confirmation of cloud shrinking
+| Parameter | Description | Units | Example |
+| :--- | :--- | :--- | :--- |
+| **`N`** | Number of atoms ($N_{atoms}$). | Dimensionless | `100` |
+| **`B_prime`** | Magnetic field gradient ($B'$). | T/m | `0.01` |
+| **`T_res_uK`** | Initial RMS Temperature (in $\mu\text{K}$). | $\mu\text{K}$ | `200.0` |
+| **`R_res`** | Initial RMS Radius of the atom cloud. | m | `0.001` |
+
+**Example Execution:**
+
+```bash
+python mot_simulation.py 100 0.01 200.0 0.001
+```
+
+### 2.2. Output
+
+The simulation creates a dedicated results folder based on the exact input parameters, ensuring that the data is always linked to its configuration.
+
+**Folder Naming Convention (Example):**
+
+For the input `100 0.01 200.0 0.001`, the folder name will be:
+
+```
+res_N=1.0e+02_B=1.0e-02T_T=2.0e+02uK_R=1.0e-03m
+```
+
+**Files within the Folder:**
+
+| File Name | Description |
+| :--- | :--- |
+| `mot_data_full.npz` | Compressed NumPy archive containing all raw data (position history, velocity history, RMS histories, time steps, etc.). |
+| `parameters.txt` | A plain text file summarizing all physical constants, MOT parameters, and simulation inputs for full reproducibility. |
+
+## 3\. Post-Processing Script (`post_processor.py`)
+
+This script is used to read the data generated by the simulation, perform analysis, and create informative plots and animations. **It must be run using the exact same four parameters used in the simulation.**
+
+### 3.1. Execution and Data Handling
+
+The script automatically determines the expected folder name from your input parameters. It supports two modes:
+
+#### Mode A: Local Data
+
+If the data folder (e.g., `res_N=...`) and `mot_data_full.npz` are already present in the same directory as the script, run the script using only the four simulation parameters:
+
+```bash
+python post_processor.py 100 0.01 200.0 0.001
+```
+
+#### Mode B: Download from Cluster (Requires Setup)
+
+If the data resides on a remote high-performance computing (HPC) cluster, you must first configure the **`CLUSTER_USER`**, **`CLUSTER_HOST`**, and **`REMOTE_BASE_PATH`** variables at the top of the `post_processor.py` file.
+
+Then, add the **`download`** flag to the command line:
+
+```bash
+python post_processor.py 100 0.01 200.0 0.001 download
+```
+
+This command will:
+
+1.  Construct the remote path.
+2.  Use `scp` to download the `mot_data_full.npz` file and place it inside the newly created local results folder.
+3.  Proceed with the analysis, saving results into the new local folder.
+
+### 3.2. Analysis Output Files
+
+All analysis results (figures and the GIF) are saved **directly into the original data folder** (e.g., `res_N=1.0e+02_B=1.0e-02T_T=2.0e+02uK_R=1.0e-03m/`).
+
+| File Name | Description | Purpose |
+| :--- | :--- | :--- |
+| `figure1_scalar_history.png` | **Time Evolution Plots** | Tracks RMS Radius (Confinement), RMS Velocity (Cooling), and Total Kinetic Energy over time. |
+| `figure2_spatial_confinement.png` | **Spatial Analysis** | Shows the final atom cloud shape (X vs Z scatter plot), dimensional RMS asymmetry, and density profiles. |
+| `figure3_phase_space.png` | **Kinetic Analysis** | Plots the final phase-space profile (position vs. velocity) and the velocity distribution histogram. |
+| `mot_evolution.gif` | **Atom Cloud Animation** | A GIF visualizing the X-Z cross-section of the atom cloud's spatial evolution throughout the simulation. |
+
+## 4\. Troubleshooting
+
+  * **"Required data file ... not found locally."**
+      * Ensure you have used the **exact** same four numerical inputs in the post-processor as you did in the simulation.
+      * If the data is remote, ensure you added the `download` flag and have correctly configured the SCP variables.
+  * **SCP Fails (Permission denied/Host not found).**
+      * Verify `CLUSTER_USER`, `CLUSTER_HOST`, and `REMOTE_BASE_PATH` are correct.
+      * Ensure you can normally SSH/SCP to your cluster *without* this script.
+  * **GIF creation fails.**
+      * Ensure you have the `pillow` library installed (`pip install pillow`).
+
+<!-- end list -->
