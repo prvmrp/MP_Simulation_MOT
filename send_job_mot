@@ -5,4 +5,4 @@ B_prime=$2
 T_init=$3
 R_init=$4
 
-sbatch job_interf $N $B_prime $T_init $R_init
+sbatch job_mot $N $B_prime $T_init $R_init

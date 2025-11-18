@@ -267,7 +267,7 @@ def save_simulation_data(time_history, r_rms_history, v_rms_history, e_k_history
     R_res_str = f"{R_res:.1e}"
     
     # Create the directory path (RENAMED to T_res and R_res in folder name)
-    folder_name = f"res_N={N_str}_B={B_str}T_T={T_res_str}uK_R={R_res_str}m"
+    folder_name = f"Results/res_N={N_str}_B={B_str}T_T={T_res_str}uK_R={R_res_str}m"
     
     try:
         os.makedirs(folder_name, exist_ok=True)

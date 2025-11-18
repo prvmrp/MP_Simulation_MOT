@@ -1,10 +1,27 @@
-/var/spool/slurmd/job190089/slurm_script: line 13: ./venv/bin/activate: No such file or directory
-Successfully loaded data from mot_data_full.npz
-Saved 'figure1_scalar_history.png'
-Saved 'figure2_spatial_confinement.png'
-Saved 'figure3_phase_space.png'
+Successfully loaded data from Results/res_N=1.0e+04_B=1.0e-02T_T=2.0e+02uK_R=1.0e-02m/mot_data_full.npz
+Saved 'figure1_scalar_history.png' to Results/res_N=1.0e+04_B=1.0e-02T_T=2.0e+02uK_R=1.0e-02m
+Saved 'figure2_spatial_confinement.png' to Results/res_N=1.0e+04_B=1.0e-02T_T=2.0e+02uK_R=1.0e-02m
+Saved 'figure3_phase_space.png' to Results/res_N=1.0e+04_B=1.0e-02T_T=2.0e+02uK_R=1.0e-02m
 
 Starting GIF generation in memory via Matplotlib...
 
-Saving GIF 'mot_evolution.gif'...
-Successfully created mot_evolution.gif.
+Saving GIF 'mot_evolution.gif' to Results/res_N=1.0e+04_B=1.0e-02T_T=2.0e+02uK_R=1.0e-02m...
+Successfully created Results/res_N=1.0e+04_B=1.0e-02T_T=2.0e+02uK_R=1.0e-02m/mot_evolution.gif.
+Successfully loaded data from Results/res_N=1.0e+04_B=1.0e-02T_T=1.0e+03uK_R=1.0e-02m/mot_data_full.npz
+Saved 'figure1_scalar_history.png' to Results/res_N=1.0e+04_B=1.0e-02T_T=1.0e+03uK_R=1.0e-02m
+Saved 'figure2_spatial_confinement.png' to Results/res_N=1.0e+04_B=1.0e-02T_T=1.0e+03uK_R=1.0e-02m
+Saved 'figure3_phase_space.png' to Results/res_N=1.0e+04_B=1.0e-02T_T=1.0e+03uK_R=1.0e-02m
+
+Starting GIF generation in memory via Matplotlib...
+
+Saving GIF 'mot_evolution.gif' to Results/res_N=1.0e+04_B=1.0e-02T_T=1.0e+03uK_R=1.0e-02m...
+Successfully created Results/res_N=1.0e+04_B=1.0e-02T_T=1.0e+03uK_R=1.0e-02m/mot_evolution.gif.
+Successfully loaded data from Results/res_N=1.0e+04_B=1.0e-02T_T=5.0e+03uK_R=1.0e-02m/mot_data_full.npz
+Saved 'figure1_scalar_history.png' to Results/res_N=1.0e+04_B=1.0e-02T_T=5.0e+03uK_R=1.0e-02m
+Saved 'figure2_spatial_confinement.png' to Results/res_N=1.0e+04_B=1.0e-02T_T=5.0e+03uK_R=1.0e-02m
+Saved 'figure3_phase_space.png' to Results/res_N=1.0e+04_B=1.0e-02T_T=5.0e+03uK_R=1.0e-02m
+
+Starting GIF generation in memory via Matplotlib...
+
+Saving GIF 'mot_evolution.gif' to Results/res_N=1.0e+04_B=1.0e-02T_T=5.0e+03uK_R=1.0e-02m...
+Successfully created Results/res_N=1.0e+04_B=1.0e-02T_T=5.0e+03uK_R=1.0e-02m/mot_evolution.gif.
