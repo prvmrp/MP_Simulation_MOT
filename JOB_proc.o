@@ -1,27 +1,9 @@
-Successfully loaded data from Results/res_N=1.0e+04_B=1.0e-02T_T=2.0e+02uK_R=1.0e-02m/mot_data_full.npz
-Saved 'figure1_scalar_history.png' to Results/res_N=1.0e+04_B=1.0e-02T_T=2.0e+02uK_R=1.0e-02m
-Saved 'figure2_spatial_confinement.png' to Results/res_N=1.0e+04_B=1.0e-02T_T=2.0e+02uK_R=1.0e-02m
-Saved 'figure3_phase_space.png' to Results/res_N=1.0e+04_B=1.0e-02T_T=2.0e+02uK_R=1.0e-02m
+Successfully loaded data from Results/res_N=1.0e+04_B=1.0e-01T_T=1.0e+05uK_R=1.0e-03m/mot_data_full.npz
+Saved 'figure1_scalar_history.png' to Results/res_N=1.0e+04_B=1.0e-01T_T=1.0e+05uK_R=1.0e-03m
+Saved 'figure2_spatial_confinement.png' to Results/res_N=1.0e+04_B=1.0e-01T_T=1.0e+05uK_R=1.0e-03m
+Saved 'figure3_phase_space.png' to Results/res_N=1.0e+04_B=1.0e-01T_T=1.0e+05uK_R=1.0e-03m
 
 Starting GIF generation in memory via Matplotlib...
 
-Saving GIF 'mot_evolution.gif' to Results/res_N=1.0e+04_B=1.0e-02T_T=2.0e+02uK_R=1.0e-02m...
-Successfully created Results/res_N=1.0e+04_B=1.0e-02T_T=2.0e+02uK_R=1.0e-02m/mot_evolution.gif.
-Successfully loaded data from Results/res_N=1.0e+04_B=1.0e-02T_T=1.0e+03uK_R=1.0e-02m/mot_data_full.npz
-Saved 'figure1_scalar_history.png' to Results/res_N=1.0e+04_B=1.0e-02T_T=1.0e+03uK_R=1.0e-02m
-Saved 'figure2_spatial_confinement.png' to Results/res_N=1.0e+04_B=1.0e-02T_T=1.0e+03uK_R=1.0e-02m
-Saved 'figure3_phase_space.png' to Results/res_N=1.0e+04_B=1.0e-02T_T=1.0e+03uK_R=1.0e-02m
-
-Starting GIF generation in memory via Matplotlib...
-
-Saving GIF 'mot_evolution.gif' to Results/res_N=1.0e+04_B=1.0e-02T_T=1.0e+03uK_R=1.0e-02m...
-Successfully created Results/res_N=1.0e+04_B=1.0e-02T_T=1.0e+03uK_R=1.0e-02m/mot_evolution.gif.
-Successfully loaded data from Results/res_N=1.0e+04_B=1.0e-02T_T=5.0e+03uK_R=1.0e-02m/mot_data_full.npz
-Saved 'figure1_scalar_history.png' to Results/res_N=1.0e+04_B=1.0e-02T_T=5.0e+03uK_R=1.0e-02m
-Saved 'figure2_spatial_confinement.png' to Results/res_N=1.0e+04_B=1.0e-02T_T=5.0e+03uK_R=1.0e-02m
-Saved 'figure3_phase_space.png' to Results/res_N=1.0e+04_B=1.0e-02T_T=5.0e+03uK_R=1.0e-02m
-
-Starting GIF generation in memory via Matplotlib...
-
-Saving GIF 'mot_evolution.gif' to Results/res_N=1.0e+04_B=1.0e-02T_T=5.0e+03uK_R=1.0e-02m...
-Successfully created Results/res_N=1.0e+04_B=1.0e-02T_T=5.0e+03uK_R=1.0e-02m/mot_evolution.gif.
+Saving GIF 'mot_evolution.gif' to Results/res_N=1.0e+04_B=1.0e-01T_T=1.0e+05uK_R=1.0e-03m...
+Successfully created Results/res_N=1.0e+04_B=1.0e-01T_T=1.0e+05uK_R=1.0e-03m/mot_evolution.gif.
