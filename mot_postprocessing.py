@@ -36,7 +36,7 @@ def generate_folder_name(N, B_prime, T_res_uK, R_res):
     R_res_str = f"{R_res:.1e}"
     
     # Construct the folder name using the simulation's structure
-    folder_name = f"res_N={N_str}_B={B_str}T_T={T_res_str}uK_R={R_res_str}m"
+    folder_name = f"Results/res_N={N_str}_B={B_str}T_T={T_res_str}uK_R={R_res_str}m"
     return folder_name
 
 # --- SSH/SCP Utility (Minor Update for Clarity) ---
