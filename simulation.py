@@ -371,7 +371,8 @@ if __name__ == "__main__":
         current_time = step * dt
         r_rms = np.sqrt(np.mean(np.sum(positions**2, axis=1)))
         v_rms = np.sqrt(np.mean(np.sum(velocities**2, axis=1)))
-        
+        T = m_atom * v_rms**2 / 2
+
         total_kinetic_energy = 0.5 * m_atom * np.sum(velocities**2)
         
         time_history.append(current_time)
@@ -384,7 +385,7 @@ if __name__ == "__main__":
             vel_history.append(velocities.copy())
         
         if step % 1000 == 0: 
-            print(f"Time {current_time:.2e} s: R_RMS = {r_rms:.2e} m, V_RMS = {v_rms:.2e} m/s")
+            print(f"Time {current_time:.2e} s: R_RMS = {r_rms:.2e} m, V_RMS = {v_rms:.2e} m/s, T = {T*1e6:.2f} uK")
 
     print("\nSimulation Finished.")
     
