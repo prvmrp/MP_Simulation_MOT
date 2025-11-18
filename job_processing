@@ -1,0 +1,15 @@
+#!/bin/bash -l
+#SBATCH --time=00:05:00
+#SBATCH --nodes=1
+#SBATCH --mem=16G
+#SBATCH --ntasks-per-node=1
+#SBATCH --sockets-per-node=1
+#SBATCH --partition=m1,m2,m3
+#SBATCH --job-name=mot_proc
+#SBATCH --output=JOB_proc.o
+
+#>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+# running
+source ./venv/bin/activate
+python3 mot_postprocessing.py
+

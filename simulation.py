@@ -1,4 +1,5 @@
 import numpy as np
+from sys import argv
 
 # --- 1. PHYSICAL CONSTANTS AND MOT PARAMETERS ---
 hbar = 1.054e-34  # Reduced Planck constant (J*s)
@@ -8,22 +9,24 @@ kL = 2 * np.pi / lambda_L # Laser wave number (1/m)
 Gamma = 2 * np.pi * 6.0e6 # Natural linewidth (rad/s)
 sigma0 = 6 * np.pi / kL**2 # Resonant scattering cross section (m^2)
 m_atom = 1.41e-25 # Mass of a Rubidium atom (kg)
+k_B = 1.380649e-23
 
 # MOT Parameters
-B_prime = 0.1     # Magnetic field gradient (T/m)
+B_prime = float(argv[2])     # Magnetic field gradient (T/m)
 mu = 1.399e10     # Gyromagnetic ratio (Hz/T, placeholder for simplicity)
 delta = -2.5 * Gamma # Laser detuning (rad/s)
 Isat = 16.7       # Saturation intensity (W/m^2)
 I_infinity = 0.5 * Isat # Beam intensity before entering the cloud (W/m^2)
 
 # Simulation parameters
-N_atoms = 10000 # Number of atoms (Kept at 1,000)
+N_atoms = int(argv[1]) # Number of atoms (Kept at 1,000)
 dt = 3.0e-6
 n_steps = 6000 
 n_save = 50
 SAVE_INTERVAL = n_steps // n_save
-V_init = 10.0
-R_init = 2e-3
+T_init = float(argv[3]) * 1e-6 # T_init in uK
+V_init = np.sqrt(k_B * T_init / m_atom)
+R_init = float(argv[4])
 
 # Mapping for transitions (q) and beams (alpha)
 Q_TRANSITIONS = {-1: 'sigma_minus', 0: 'pi', 1: 'sigma_plus'}

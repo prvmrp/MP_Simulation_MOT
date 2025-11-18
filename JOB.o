@@ -1,0 +1,2 @@
+/var/spool/slurmd/job190076/slurm_script: line 18: ./venv/bin/activate: No such file or directory
+slurmstepd: error: *** JOB 190076 ON mtx05 CANCELLED AT 2025-11-18T11:18:40 DUE TO TIME LIMIT ***
