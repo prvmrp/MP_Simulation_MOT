@@ -1,10 +1,5 @@
-/var/spool/slurmd/job190089/slurm_script: line 13: ./venv/bin/activate: No such file or directory
-Successfully loaded data from mot_data_full.npz
-Saved 'figure1_scalar_history.png'
-Saved 'figure2_spatial_confinement.png'
-Saved 'figure3_phase_space.png'
-
-Starting GIF generation in memory via Matplotlib...
-
-Saving GIF 'mot_evolution.gif'...
-Successfully created mot_evolution.gif.
+/var/spool/slurmd/job190270/slurm_script: line 13: ./venv/bin/activate: No such file or directory
+Traceback (most recent call last):
+  File "mot_postprocessing.py", line 2, in <module>
+    import matplotlib.pyplot as plt
+ModuleNotFoundError: No module named 'matplotlib'

@@ -1,8 +1,0 @@
-#!/bin/bash -l
-
-N=$1
-B_prime=$2
-T_init=$3
-R_init=$4
-
-sbatch job_interf $N $B_prime $T_init $R_init
