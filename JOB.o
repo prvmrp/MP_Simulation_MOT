@@ -1,12 +1,12 @@
-/var/spool/slurmd/job190629/slurm_script: line 18: ./venv/bin/activate: No such file or directory
+/var/spool/slurmd/job190669/slurm_script: line 18: ./venv/bin/activate: No such file or directory
 Starting LOW-DENSITY (N=10000) MOT Simulation...
 Initial Conditions (T_res): 100000.0 uK (3.13e+00 m/s RMS) and (R_res): 1.00e-03 m RMS.
-Time 0.00e+00 s: R_RMS = 1.74e-03 m, V_RMS = 5.41e+00 m/s, T = 0.00 uK
-Time 3.00e-03 s: R_RMS = 5.85e-03 m, V_RMS = 5.81e-01 m/s, T = 0.00 uK
-Time 6.00e-03 s: R_RMS = 6.32e-03 m, V_RMS = 6.11e-01 m/s, T = 0.00 uK
-Time 9.00e-03 s: R_RMS = 7.16e-03 m, V_RMS = 6.17e-01 m/s, T = 0.00 uK
-Time 1.20e-02 s: R_RMS = 8.71e-03 m, V_RMS = 7.00e-01 m/s, T = 0.00 uK
-Time 1.50e-02 s: R_RMS = 1.09e-02 m, V_RMS = 8.58e-01 m/s, T = 0.00 uK
+Time 0.00e+00 s: R_RMS = 1.73e-03 m, V_RMS = 5.39e+00 m/s, T = 0.00 uK
+Time 3.00e-03 s: R_RMS = 5.82e-03 m, V_RMS = 5.75e-01 m/s, T = 0.00 uK
+Time 6.00e-03 s: R_RMS = 6.28e-03 m, V_RMS = 6.09e-01 m/s, T = 0.00 uK
+Time 9.00e-03 s: R_RMS = 7.11e-03 m, V_RMS = 6.14e-01 m/s, T = 0.00 uK
+Time 1.20e-02 s: R_RMS = 8.64e-03 m, V_RMS = 6.94e-01 m/s, T = 0.00 uK
+Time 1.50e-02 s: R_RMS = 1.08e-02 m, V_RMS = 8.51e-01 m/s, T = 0.00 uK
 
 Simulation Finished.
 
