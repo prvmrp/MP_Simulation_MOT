@@ -77,8 +77,8 @@ def calculate_polarization_fractions(B_factor):
         B_alpha_factor = B_factor[:, idx]
         
         # Core terms for sigma+ and sigma- (Eq. 4)
-        term_pos = 0.5 * (1 + sgn_dir * B_alpha_factor)**2
-        term_neg = 0.5 * (1 - sgn_dir * B_alpha_factor)**2
+        term_pos = 0.25 * (1 + sgn_dir * B_alpha_factor)**2
+        term_neg = 0.25 * (1 - sgn_dir * B_alpha_factor)**2
         
         # Assign q=+ and q=- based on MOT helicity convention:
         if axis == 'x':
@@ -167,7 +167,7 @@ def calculate_attenuation_map(positions, velocities, B_mag, B_factor):
         O_depth[sort_indices] = O_sorted
         
         # Attenuated intensity (Eq. 13)
-        I_alpha_pm = I_infinity * np.exp(-O_depth)
+        I_alpha_pm = I_infinity * np.exp(- O_depth * 1e-2)
         I_att_map[(axis, sign)] = I_alpha_pm
         
     return I_att_map, p_map
