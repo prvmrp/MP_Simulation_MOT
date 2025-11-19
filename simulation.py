@@ -52,7 +52,7 @@ def calculate_magnetic_field_vectorized(r_positions):
     
     # Magnetic factor for polarization fractions (alpha' * B' / 2*B(r))
     B_factor = np.zeros_like(r_positions)
-    B_factor[:, 0] = -2 * x / (2 * B_mag)    # x-axis factor (alpha'=-2x)
+    B_factor[:, 0] = 2 * x / (2 * B_mag)    # x-axis factor (alpha'=-2x)
     B_factor[:, 1] = y / (2 * B_mag)    # y-axis factor (alpha'=y)
     B_factor[:, 2] = z / (2 * B_mag) # z-axis factor (alpha'=z)
     
@@ -81,12 +81,12 @@ def calculate_polarization_fractions(B_factor):
         term_neg = 0.5 * (1 - sgn_dir * B_alpha_factor)**2
         
         # Assign q=+ and q=- based on MOT helicity convention:
-        if axis == 'z':
-            # Z-axis is right-handed: + is sigma+, - is sigma-
+        if axis == 'x':
+            # X-axis is right-handed: + is sigma+, - is sigma-
             p_map[(axis, sign, 1)] = term_pos   # sigma+ (q=1)
             p_map[(axis, sign, -1)] = term_neg  # sigma- (q=-1)
         else:
-            # X/Y axes are left-handed (helicity is reversed):
+            # Y/Z axes are left-handed (helicity is reversed):
             p_map[(axis, sign, 1)] = term_neg   # sigma+ (q=1)
             p_map[(axis, sign, -1)] = term_pos  # sigma- (q=-1)
             
