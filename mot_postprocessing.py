@@ -6,6 +6,8 @@ import shutil
 import glob
 import subprocess
 import sys
+import re
+from typing import Optional, Union
 
 # Try to import imageio for GIF creation, but allow the script to run without it
 try:
@@ -14,70 +16,115 @@ try:
 except ImportError:
     IMAGEIO_AVAILABLE = False
 
-# --- CONFIGURATION ---
+# --- CONFIGURATION & CONSTANTS ---
 BASE_DATA_FILENAME = 'mot_data_full.npz' 
 GIF_FILENAME = 'mot_evolution.gif'
-OUTPUT_DIR = 'mot_frames' # This variable is no longer strictly used for saving images
+
+# Default Constants (used if parameters file cannot be read)
+DEFAULT_MASS = 1.443160e-25  # kg (e.g., Rb-87)
+DEFAULT_KB = 1.380649e-23  # J/K
+
+# Variables to be set dynamically later
+MASS_ATOM = DEFAULT_MASS
+K_BOLTZMANN = DEFAULT_KB
+
 
 # >>> USER-DEFINED CLUSTER SETTINGS (Simplified) <<<
-CLUSTER_USER = "your_username"      # e.g., "leona"
+CLUSTER_USER = "your_username"        # e.g., "leona"
 CLUSTER_HOST = "cluster.server.edu" # e.g., "login.cluster.uni"
 REMOTE_BASE_PATH = "/path/to/simulation/results" 
 
 
-# --- UTILITY: FOLDER NAME GENERATION ---
+# --- PARAMETER READING UTILITIES (UNCHANGED) ---
+
+def read_parameter_from_string(param_content: str, key_name: str) -> Optional[float]:
+    """Reads a single numeric parameter from the parameters file content."""
+    # Pattern to match the key name, colon, optional whitespace, and capture the float value
+    pattern = re.compile(
+        fr"^{re.escape(key_name)}:\s*([+-]?\d+\.?\d*(?:[eE][+-]?\d+)?)\s*", 
+        re.MULTILINE
+    )
+    
+    match = pattern.search(param_content)
+    
+    if match:
+        try:
+            return float(match.group(1))
+        except ValueError:
+            print(f"Warning: Could not convert extracted value '{match.group(1)}' to float for key '{key_name}'.")
+            return None
+    return None
+
+def load_sim_parameters(folder_path: str):
+    """Loads physical constants (mass, kB) from the local parameters file."""
+    global MASS_ATOM, K_BOLTZMANN
+    
+    param_file_path = os.path.join(folder_path, 'parameters.txt')
+    
+    if os.path.exists(param_file_path):
+        try:
+            with open(param_file_path, 'r') as f:
+                content = f.read()
+            
+            # Read Atomic Mass
+            m_read = read_parameter_from_string(content, "Atom mass (m_atom)")
+            if m_read is not None:
+                MASS_ATOM = m_read
+                print(f"Dynamically set Atom Mass: {MASS_ATOM:.2e} kg")
+            
+            # Read Boltzmann Constant
+            kb_read = read_parameter_from_string(content, "Boltzmann constant (k_B)")
+            if kb_read is not None:
+                K_BOLTZMANN = kb_read
+                print(f"Dynamically set Boltzmann Constant: {K_BOLTZMANN:.2e} J/K")
+                
+        except Exception as e:
+            print(f"Warning: Failed to read constants from '{param_file_path}'. Using defaults. Error: {e}")
+    else:
+        print(f"Info: Parameters file not found at '{param_file_path}'. Using default constants.")
+
+# --- UTILITY: FOLDER NAME GENERATION (UNCHANGED) ---
 
 def generate_folder_name(N, B_prime, T_res_uK, R_res):
     """Reconstructs the folder name exactly as saved by the simulation script."""
-    # Use scientific notation matching the simulation output: res_N=1.0e+02_B=1.0e-02T_T=2.0e+02uK_R=1.0e-03m
     N_str = f"{N:.1e}"
     B_str = f"{B_prime:.1e}"
     T_res_str = f"{T_res_uK:.1e}"
     R_res_str = f"{R_res:.1e}"
     
-    # Construct the folder name using the simulation's structure
     folder_name = f"Results/res_N={N_str}_B={B_str}T_T={T_res_str}uK_R={R_res_str}m"
     return folder_name
 
-# --- SSH/SCP Utility (Minor Update for Clarity) ---
+# --- SSH/SCP UTILITY (UNCHANGED) ---
 
 def download_data_via_scp(user, host, remote_folder, local_filename=BASE_DATA_FILENAME):
-    """
-    Downloads the simulation data file from a remote cluster based on the generated folder name.
-    """
+    """Downloads the simulation data file from a remote cluster."""
     remote_file = os.path.join(remote_folder, BASE_DATA_FILENAME)
     remote_source = f"{user}@{host}:{remote_file}"
-    # The target directory is the folder name itself (e.g., res_N=100...)
     local_target_dir = os.path.basename(remote_folder) 
     local_target_path = os.path.join(local_target_dir, local_filename) 
     
-    # Ensure the local directory exists
     os.makedirs(local_target_dir, exist_ok=True)
     
     print(f"\nAttempting to download data from: {remote_source}")
     
-    # Construct the SCP command
     scp_command = ['scp', remote_source, local_target_path]
     
     try:
         result = subprocess.run(scp_command, check=True, capture_output=True, text=True)
         print(f"Download successful. Data saved as '{local_target_path}'.")
-        return local_target_path # Return the full local file path
-        
+        return local_target_path 
     except subprocess.CalledProcessError as e:
         print("\n--- SCP DOWNLOAD FAILED ---")
         print(f"Error executing command: {' '.join(scp_command)}")
-        print(f"Check configuration and remote path: {remote_file}")
         print(f"Reason: {e.stderr.strip()}")
-        print("---------------------------\n")
         return None
     except FileNotFoundError:
         print("\n--- SCP DOWNLOAD FAILED ---")
         print("Error: The 'scp' command was not found. Ensure SSH client tools are installed.")
-        print("---------------------------\n")
         return None
 
-# --- UTILITY AND PLOTTING FUNCTIONS (MODIFIED) ---
+# --- UTILITY AND PLOTTING FUNCTIONS (FIXED) ---
 
 def load_simulation_data(filename):
     """Loads all data saved by the simulation."""
@@ -89,16 +136,41 @@ def load_simulation_data(filename):
         print(f"Error: Data file '{filename}' not found locally. Please download it first.")
         return None
 
+# NEW/FIXED RMS CALCULATION UTILITIES
+def compute_rms_history(pos_frames: np.ndarray) -> np.ndarray:
+    """Computes R_RMS for each frame in the position history."""
+    # pos_frames shape is (n_frames, n_atoms, 3)
+    # R^2 = x^2 + y^2 + z^2
+    r_sq = np.sum(pos_frames**2, axis=2) # Sum x^2+y^2+z^2 for each atom
+    # R_RMS = sqrt(mean(R^2)) over all atoms
+    r_rms = np.sqrt(np.mean(r_sq, axis=1)) 
+    return r_rms
+
+def compute_vrms_history(vel_frames: np.ndarray) -> np.ndarray:
+    """Computes V_RMS for each frame in the velocity history."""
+    # V^2 = vx^2 + vy^2 + vz^2
+    v_sq = np.sum(vel_frames**2, axis=2) # Sum vx^2+vy^2+vz^2 for each atom
+    # V_RMS = sqrt(mean(V^2)) over all atoms
+    v_rms = np.sqrt(np.mean(v_sq, axis=1)) 
+    return v_rms
+
+def compute_ek_history(v_rms_hist: np.ndarray, n_atoms: int, m_atom: float) -> np.ndarray:
+    """Computes Total Kinetic Energy (E_k) history."""
+    # E_k = 0.5 * N_atoms * m_atom * V_rms^2
+    ek_hist = 0.5 * n_atoms * m_atom * v_rms_hist**2
+    return ek_hist
+
+
+# Replaced direct array loading with calculated history arrays
 def plot_scalar_history_improved(time, r_rms, v_rms, e_k, output_folder):
     """
     Figure 1: Plots RMS radius, RMS velocity, and Total Kinetic Energy history.
-    Saves output to the specified folder.
     """
     plt.style.use('ggplot')
     fig, axs = plt.subplots(1, 3, figsize=(18, 5))
     time_ms = time * 1e3
 
-    # ... (Plotting code remains unchanged)
+    # Plot 1: RMS Radius
     axs[0].plot(time_ms, r_rms * 1e3, color='darkblue', alpha=0.8)
     axs[0].set_title("Cloud Confinement (RMS Radius)")
     axs[0].set_xlabel("Time (ms)")
@@ -106,12 +178,14 @@ def plot_scalar_history_improved(time, r_rms, v_rms, e_k, output_folder):
     axs[0].grid(True, linestyle='--')
     axs[0].ticklabel_format(style='sci', axis='y', scilimits=(0,0))
 
+    # Plot 2: RMS Velocity
     axs[1].plot(time_ms, v_rms, color='red', alpha=0.8)
     axs[1].set_title("Cloud Cooling (RMS Velocity)")
     axs[1].set_xlabel("Time (ms)")
     axs[1].set_ylabel("V_RMS (m/s)")
     axs[1].grid(True, linestyle='--')
 
+    # Plot 3: Total Kinetic Energy 
     axs[2].plot(time_ms, e_k * 1e12, color='green', alpha=0.8)
     axs[2].set_title("Total Kinetic Energy")
     axs[2].set_xlabel("Time (ms)")
@@ -131,7 +205,6 @@ def plot_scalar_history_improved(time, r_rms, v_rms, e_k, output_folder):
 def plot_spatial_confinement_analysis(final_positions, output_folder):
     """
     Figure 2: Plots spatial distribution, density profiles, and dimensional RMS.
-    Saves output to the specified folder.
     """
     plt.style.use('default')
     fig, axs = plt.subplots(2, 2, figsize=(14, 12))
@@ -139,7 +212,7 @@ def plot_spatial_confinement_analysis(final_positions, output_folder):
 
     pos_mm = final_positions * 1e3 
     
-    # ... (Plotting code remains unchanged)
+    # Calculate dimensional RMS from final positions
     rms_x = np.sqrt(np.mean(final_positions[:, 0]**2)) * 1e3
     rms_y = np.sqrt(np.mean(final_positions[:, 1]**2)) * 1e3
     rms_z = np.sqrt(np.mean(final_positions[:, 2]**2)) * 1e3
@@ -184,14 +257,12 @@ def plot_spatial_confinement_analysis(final_positions, output_folder):
 def plot_phase_space_analysis(final_positions, final_velocities, output_folder):
     """
     Figure 3: Plots phase-space profiles for kinetic verification.
-    Saves output to the specified folder.
     """
     plt.style.use('default')
     fig, axs = plt.subplots(1, 2, figsize=(14, 6))
 
     pos_mm = final_positions * 1e3 # mm
 
-    # ... (Plotting code remains unchanged)
     axs[0].scatter(pos_mm[:, 0], final_velocities[:, 0], s=5, alpha=0.5, color='teal')
     axs[0].set_title("Phase-Space Profile ($x$ vs. $v_x$) - Damping Check")
     axs[0].set_xlabel("Position $x$ (mm)")
@@ -213,45 +284,92 @@ def plot_phase_space_analysis(final_positions, final_velocities, output_folder):
     print(f"Saved 'figure3_phase_space.png' to {output_folder}")
 
 
-def create_animation_matplotlib(pos_history, time_interval, output_folder):
+# FIXED: Relies on global MASS_ATOM/K_BOLTZMANN
+def create_animation_matplotlib(pos_history, v_rms_history, N_atoms, time_interval, output_folder):
     """
-    Generates the GIF using Matplotlib's FuncAnimation.
-    Saves output to the specified folder.
+    Generates the GIF using Matplotlib's FuncAnimation, showing Z-X and Z-Y plots,
+    along with instantaneous V_rms and Temperature (calculated from V_rms).
     """
     print("\nStarting GIF generation in memory via Matplotlib...")
     
-    # 1. Setup figure and determine limits (UNCHANGED)
-    fig, ax = plt.subplots(figsize=(7, 7))
+    # 1. Setup figure and determine limits 
+    plt.style.use('default')
+    fig, axs = plt.subplots(1, 2, figsize=(14, 7))
+    
     all_positions_m = np.concatenate(pos_history, axis=0)
     max_pos_m = np.max(np.abs(all_positions_m)) * 1.05 
     max_pos_mm = max_pos_m * 1e3
     pos_frame_0_mm = pos_history[0] * 1e3
-    scat = ax.scatter(pos_frame_0_mm[:, 0], pos_frame_0_mm[:, 2], s=5, alpha=0.6, color='darkblue')
-
-    ax.set_xlim(-max_pos_mm, max_pos_mm)
-    ax.set_ylim(-max_pos_mm, max_pos_mm)
-    ax.set_xlabel("X Position (mm)")
-    ax.set_ylabel("Z Position (mm)")
-    ax.set_aspect('equal', adjustable='box')
-    ax.grid(True)
-    time_text = ax.text(0.05, 0.95, '', transform=ax.transAxes, fontsize=12, verticalalignment='top')
     
-    # 2. Animation update function (UNCHANGED)
+    # --- Left Plot (Z-X) ---
+    scat_zx = axs[0].scatter(pos_frame_0_mm[:, 0], pos_frame_0_mm[:, 2], s=5, alpha=0.6, color='darkblue')
+    axs[0].set_xlim(-max_pos_mm, max_pos_mm)
+    axs[0].set_ylim(-max_pos_mm, max_pos_mm)
+    axs[0].set_xlabel("X Position (mm)")
+    axs[0].set_ylabel("Z Position (mm)")
+    axs[0].set_aspect('equal', adjustable='box')
+    axs[0].set_title("Atom Cloud Evolution (Z-X Plane)")
+    axs[0].grid(True)
+    
+    # --- Right Plot (Z-Y) ---
+    scat_zy = axs[1].scatter(pos_frame_0_mm[:, 1], pos_frame_0_mm[:, 2], s=5, alpha=0.6, color='darkred')
+    axs[1].set_xlim(-max_pos_mm, max_pos_mm)
+    axs[1].set_ylim(-max_pos_mm, max_pos_mm)
+    axs[1].set_xlabel("Y Position (mm)")
+    axs[1].set_ylabel("Z Position (mm)")
+    axs[1].set_aspect('equal', adjustable='box')
+    axs[1].set_title("Atom Cloud Evolution (Z-Y Plane)")
+    axs[1].grid(True)
+    
+    # Shared time display
+    fig.suptitle("Atom Cloud Evolution: Two Cross-Sections", fontsize=16)
+    time_text = fig.text(0.5, 0.95, '', transform=fig.transFigure, ha='center', fontsize=14, verticalalignment='top')
+    
+    # --- V_RMS and Temperature Text Objects (Upper Right Corner) ---
+    vrms_text = fig.text(0.98, 0.90, '', transform=fig.transFigure, 
+                         ha='right', fontsize=12, color='red', 
+                         bbox=dict(boxstyle="square,pad=0.3", fc="white", alpha=0.6, ec="red"))
+                         
+    temp_text = fig.text(0.98, 0.85, '', transform=fig.transFigure, 
+                         ha='right', fontsize=12, color='darkgreen', 
+                         bbox=dict(boxstyle="square,pad=0.3", fc="white", alpha=0.6, ec="darkgreen"))
+    
+    plt.tight_layout(rect=[0, 0.03, 1, 0.9])
+    
+    
+    # 2. Animation update function (Now correct and efficient)
     def update_frame(frame_index):
+        # Access constants via global scope
+        global MASS_ATOM, K_BOLTZMANN
+        
         positions_mm = pos_history[frame_index] * 1e3
-        scat.set_offsets(positions_mm[:, [0, 2]])
+        current_vrms = v_rms_history[frame_index]
+        
+        # CORRECT TEMP CALCULATION: T = m * V_rms^2 / (3 * k_B)
+        current_temp = (MASS_ATOM * current_vrms**2) / (3 * K_BOLTZMANN)
+        
+        # Update plot data
+        scat_zx.set_offsets(positions_mm[:, [0, 2]])
+        scat_zy.set_offsets(positions_mm[:, [1, 2]])
+        
+        # Update Time
         current_time = frame_index * time_interval
         time_text.set_text(f"t = {current_time*1e3:.2f} ms")
-        ax.set_title(f"Atom Cloud Evolution")
-        return scat, time_text
+        
+        # Update V_RMS and Temperature (displayed in millikelvin)
+        vrms_text.set_text(f"$V_{{\\text{{rms}}}}$: {current_vrms*1e2:.2f} cm/s")
+        temp_text.set_text(f"$T$: {current_temp*1e6:.2f} uK") 
+        
+        # Return all artists that were modified
+        return scat_zx, scat_zy, time_text, vrms_text, temp_text 
 
-    # 3. Create the animation object (UNCHANGED)
+    # 3. Create the animation object
     anim = animation.FuncAnimation(
         fig, update_frame, frames=len(pos_history), 
         interval=100, blit=False, repeat=False
     )
     
-    # 4. Save the animation (MODIFIED)
+    # 4. Save the animation
     try:
         save_path = os.path.join(output_folder, GIF_FILENAME)
         print(f"\nSaving GIF '{GIF_FILENAME}' to {output_folder}...")
@@ -264,14 +382,12 @@ def create_animation_matplotlib(pos_history, time_interval, output_folder):
 
     plt.close(fig)
 
-
-# --- Main Execution (MODIFIED) ---
+# --- Main Execution (FULLY CORRECTED) ---
 if __name__ == '__main__':
     
     # --- STEP 0: PARSE ARGUMENTS AND DETERMINE FILE PATH ---
     
     if len(sys.argv) < 5 or (len(sys.argv) == 5 and sys.argv[1].lower() == 'download'):
-        # ... (error message remains unchanged)
         print("\nUSAGE ERROR: Missing simulation parameters.")
         print("Required Arguments: N B_prime T_res_uK R_res [download]")
         print("Example: python post_processor.py 100 0.01 200.0 0.001 download")
@@ -287,11 +403,9 @@ if __name__ == '__main__':
         print("\nERROR: N, B_prime, T_res_uK, and R_res must be numbers.")
         sys.exit(1)
 
-    # 1. Construct the folder name
+    # 1. Construct the folder name and paths
     folder_name = generate_folder_name(N_atoms, B_prime, T_res_uK, R_res)
     local_data_path = os.path.join(folder_name, BASE_DATA_FILENAME)
-    
-    # This variable holds the folder path where all results will be saved.
     OUTPUT_FOLDER_PATH = folder_name
     
     # 2. Check for local data, attempt download if requested
@@ -299,14 +413,11 @@ if __name__ == '__main__':
         print(f"Required data file '{local_data_path}' not found locally.")
         
         if len(sys.argv) == 6 and sys.argv[5].lower() == 'download':
-            # ... (config check remains unchanged)
             if CLUSTER_USER == "your_username" or CLUSTER_HOST == "cluster.server.edu":
                 print("\nERROR: Please update CLUSTER_USER and CLUSTER_HOST variables at the top of the script first!")
                 sys.exit(1)
                 
             remote_folder = os.path.join(REMOTE_BASE_PATH, folder_name)
-            
-            # Download the data - the function handles folder creation.
             downloaded_path = download_data_via_scp(CLUSTER_USER, CLUSTER_HOST, remote_folder, BASE_DATA_FILENAME)
             
             if downloaded_path is None:
@@ -317,24 +428,30 @@ if __name__ == '__main__':
             sys.exit(1) 
             
     
-    # --- STEP 2: LOAD DATA ---
+    # --- STEP 2: LOAD CONSTANTS and SIMULATION DATA ---
 
-    sim_data = load_simulation_data(local_data_path) # Use the constructed path
+    # Load physical constants from the parameters file (MASS_ATOM, K_BOLTZMANN)
+    load_sim_parameters(OUTPUT_FOLDER_PATH)
+
+    sim_data = load_simulation_data(local_data_path) 
     
     if sim_data is not None:
-        # Load data histories (UNCHANGED)
+        # Load raw history arrays
         time_hist = sim_data['time']
-        r_rms_hist = sim_data['r_rms']
-        v_rms_hist = sim_data['v_rms']
-        e_k_hist = sim_data['e_k'] 
         pos_frames = sim_data['positions']
         vel_frames = sim_data['velocities']
+        
+        # FIXED: Calculate R_RMS, V_RMS, and E_K histories from raw data
+        # This prevents the 'KeyError' if the history arrays aren't in the NPZ file
+        r_rms_hist = compute_rms_history(pos_frames)
+        v_rms_hist = compute_vrms_history(vel_frames)
+        e_k_hist = compute_ek_history(v_rms_hist, N_atoms, MASS_ATOM)
         
         dt = sim_data['dt'].item() 
         save_interval = sim_data['save_interval'].item()
         time_interval_frame = dt * save_interval
 
-        # 3. Figure 1: Scalar Time History
+        # 3. Figure 1: Scalar Time History (Now using calculated history arrays)
         plot_scalar_history_improved(time_hist, r_rms_hist, v_rms_hist, e_k_hist, OUTPUT_FOLDER_PATH)
         
         # 4. Figure 2: Spatial Confinement Analysis
@@ -344,4 +461,4 @@ if __name__ == '__main__':
         plot_phase_space_analysis(pos_frames[-1], vel_frames[-1], OUTPUT_FOLDER_PATH)
         
         # 6. Generate GIF
-        create_animation_matplotlib(pos_frames, time_interval_frame, OUTPUT_FOLDER_PATH)
+        create_animation_matplotlib(pos_frames, v_rms_hist, N_atoms, time_interval_frame, OUTPUT_FOLDER_PATH)
