@@ -20,14 +20,14 @@ Isat = 16.7       # Saturation intensity (W/m^2)
 I_infinity = 0.5 * Isat # Beam intensity before entering the cloud (W/m^2)
 
 # Simulation parameters (RENAMED to res_etc. where applicable)
-N_atoms = int(argv[1]) # Number of atoms (Kept at 1,000)
+N_atoms = int(argv[1]) # Number of atoms
 dt = 3.0e-6
 n_steps = 6000 
 n_save = 50
 SAVE_INTERVAL = n_steps // n_save
-T_res_uK = float(argv[3]) # T_init in uK -> T_res_uK
+T_res_uK = float(argv[3]) # T_init in mK -> T_res_uK
 T_res = T_res_uK * 1e-6 # Convert to K for physics
-V_res = np.sqrt(k_B * T_res / m_atom) # V_init -> V_res
+V_res = np.sqrt(3 * k_B * T_res / m_atom) # V_init -> V_res
 R_res = float(argv[4]) # R_init -> R_res
 
 # Mapping for transitions (q) and beams (alpha)
@@ -52,7 +52,7 @@ def calculate_magnetic_field_vectorized(r_positions):
     
     # Magnetic factor for polarization fractions (alpha' * B' / 2*B(r))
     B_factor = np.zeros_like(r_positions)
-    B_factor[:, 0] = 2 * x / (2 * B_mag)    # x-axis factor (alpha'=-2x)
+    B_factor[:, 0] = -2 * x / (2 * B_mag)    # x-axis factor (alpha'=2x)
     B_factor[:, 1] = y / (2 * B_mag)    # y-axis factor (alpha'=y)
     B_factor[:, 2] = z / (2 * B_mag) # z-axis factor (alpha'=z)
     
@@ -167,7 +167,7 @@ def calculate_attenuation_map(positions, velocities, B_mag, B_factor):
         O_depth[sort_indices] = O_sorted
         
         # Attenuated intensity (Eq. 13)
-        I_alpha_pm = I_infinity * np.exp(- O_depth * 1e-2)
+        I_alpha_pm = I_infinity * np.exp(-O_depth)
         I_att_map[(axis, sign)] = I_alpha_pm
         
     return I_att_map, p_map
@@ -231,6 +231,22 @@ def calculate_diffusion_force_full(I_tot_q_map):
     
     return F_diff
 
+ # Helper function to consolidate full force calculations for the integrator (UNCHANGED)
+def get_forces_full(positions, velocities):
+    # 1. Get Magnetic Field Vectors
+    B_mag, B_factor = calculate_magnetic_field_vectorized(positions)
+    
+    # 2. Calculate Attenuated Intensities and Polarization Fractions (Coupled Step)
+    I_att_map, p_map = calculate_attenuation_map(positions, velocities, B_mag, B_factor)
+    
+    # 3. Calculate Trapping Force (F_tr)
+    F_tr, I_tot_q_map = calculate_trapping_force_full(positions, velocities, B_mag, B_factor, I_att_map, p_map)
+    
+    # 4. Calculate Diffusion Force (F_diff)
+    F_diff = calculate_diffusion_force_full(I_tot_q_map)
+    
+    return F_tr + F_diff
+
 # --- 3. VELOCITY VERLET INTEGRATOR FUNCTION (UNCHANGED) ---
 
 def integrate_motion_verlet(positions, velocities, dt, m_atom, get_forces_func):
@@ -254,7 +270,7 @@ def integrate_motion_verlet(positions, velocities, dt, m_atom, get_forces_func):
 ## 💾 Data Saving Function (UPDATED)
 # -------------------------------------------------------------
 
-def save_simulation_data(time_history, r_rms_history, v_rms_history, e_k_history, pos_history, vel_history):
+def save_simulation_data(time_history, pos_history, vel_history):
     """
     Creates a dedicated folder based on simulation parameters, writes a 
     parameters.txt file, and saves the history arrays to an NPZ file.
@@ -298,7 +314,7 @@ def save_simulation_data(time_history, r_rms_history, v_rms_history, e_k_history
         f.write(f"Number of atoms (N_atoms): {N_atoms}\n")
         f.write(f"Time step (dt): {dt:.2e} s\n")
         f.write(f"Number of steps (n_steps): {n_steps}\n")
-        f.write(f"Initial/Resonance Temperature (T_res): {T_res_uK} uK ({T_res:.2e} K)\n")
+        f.write(f"Initial/Resonance Temperature (T_res): {T_res_uK} mK\n")
         f.write(f"Initial/Resonance Velocity (V_res_RMS): {V_res:.2e} m/s\n")
         f.write(f"Initial/Resonance Radius (R_res_RMS): {R_res:.2e} m\n")
         f.write(f"Save Interval: {SAVE_INTERVAL} steps\n")
@@ -307,9 +323,6 @@ def save_simulation_data(time_history, r_rms_history, v_rms_history, e_k_history
     np.savez(
         npz_path, 
         time=np.array(time_history),
-        r_rms=np.array(r_rms_history),
-        v_rms=np.array(v_rms_history),
-        e_k=np.array(e_k_history),
         positions=np.array(pos_history),
         velocities=np.array(vel_history),
         dt=dt,
@@ -323,38 +336,18 @@ def save_simulation_data(time_history, r_rms_history, v_rms_history, e_k_history
 # -------------------------------------------------------------
 
 if __name__ == "__main__":
-    
-    # Helper function to consolidate full force calculations for the integrator (UNCHANGED)
-    def get_forces_full(positions, velocities):
-        # 1. Get Magnetic Field Vectors
-        B_mag, B_factor = calculate_magnetic_field_vectorized(positions)
-        
-        # 2. Calculate Attenuated Intensities and Polarization Fractions (Coupled Step)
-        I_att_map, p_map = calculate_attenuation_map(positions, velocities, B_mag, B_factor)
-        
-        # 3. Calculate Trapping Force (F_tr)
-        F_tr, I_tot_q_map = calculate_trapping_force_full(positions, velocities, B_mag, B_factor, I_att_map, p_map)
-        
-        # 4. Calculate Diffusion Force (F_diff)
-        F_diff = calculate_diffusion_force_full(I_tot_q_map)
-        
-        return F_tr + F_diff
 
-    # Initial state (USING RENAMED variables R_res and V_res)
-    positions = np.zeros((N_atoms, 3)) + np.random.randn(N_atoms, 3) * R_res
-    velocities = np.zeros((N_atoms, 3)) + np.random.randn(N_atoms, 3) * V_res
+    # Initial state
+    positions = np.random.normal(0.0, R_res, (N_atoms, 3))
+    velocities = np.random.normal(0.0, V_res, (N_atoms, 3))
 
     # Data collection lists (UNCHANGED)
     time_history = []
-    r_rms_history = []
-    v_rms_history = []
-    e_k_history = [] 
-    
     pos_history = []
     vel_history = []
 
     print(f"Starting LOW-DENSITY (N={N_atoms}) MOT Simulation...")
-    print(f"Initial Conditions (T_res): {T_res_uK} uK ({V_res:.2e} m/s RMS) and (R_res): {R_res:.2e} m RMS.")
+    print(f"Initial Conditions (T_res): {T_res_uK} mK ({V_res:.2e} m/s RMS) and (R_res): {R_res:.2e} m RMS.")
 
     for step in range(n_steps):
         
@@ -371,16 +364,12 @@ if __name__ == "__main__":
         current_time = step * dt
         r_rms = np.sqrt(np.mean(np.sum(positions**2, axis=1)))
         v_rms = np.sqrt(np.mean(np.sum(velocities**2, axis=1)))
-        T = m_atom * v_rms**2 / 2
+        T = m_atom * v_rms**2 / 2 / k_B
 
         total_kinetic_energy = 0.5 * m_atom * np.sum(velocities**2)
         
-        time_history.append(current_time)
-        r_rms_history.append(r_rms)
-        v_rms_history.append(v_rms)
-        e_k_history.append(total_kinetic_energy)
-        
         if step % SAVE_INTERVAL == 0:
+            time_history.append(current_time)
             pos_history.append(positions.copy())
             vel_history.append(velocities.copy())
         
@@ -391,5 +380,5 @@ if __name__ == "__main__":
     
     # --- FINAL DATA SAVING CALL ---
     save_simulation_data(
-        time_history, r_rms_history, v_rms_history, e_k_history, pos_history, vel_history
+        time_history, pos_history, vel_history
     )
