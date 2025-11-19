@@ -1,0 +1,23 @@
+--- PHYSICAL CONSTANTS ---
+Reduced Planck constant (hbar): 1.05e-34 J*s
+Speed of light (c): 3.0e+08 m/s
+Laser wavelength (lambda_L): 7.80e-07 m
+Natural linewidth (Gamma): 3.77e+07 rad/s
+Atom mass (m_atom): 1.41e-25 kg
+Boltzmann constant (k_B): 1.38e-23 J/K
+
+--- MOT PARAMETERS ---
+Magnetic field gradient (B_prime): 0.1 T/m
+Gyromagnetic ratio (mu): 1.40e+10 Hz/T
+Laser detuning (delta): -9.42e+07 rad/s
+Saturation intensity (Isat): 16.7 W/m^2
+Beam intensity (I_infinity): 8.3 W/m^2
+
+--- SIMULATION PARAMETERS ---
+Number of atoms (N_atoms): 1000
+Time step (dt): 3.00e-06 s
+Number of steps (n_steps): 6000
+Initial/Resonance Temperature (T_res): 10000.0 mK
+Initial/Resonance Velocity (V_res_RMS): 1.71e+00 m/s
+Initial/Resonance Radius (R_res_RMS): 1.00e-04 m
+Save Interval: 120 steps
