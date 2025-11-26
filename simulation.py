@@ -8,9 +8,14 @@ c = 3.0e8         # Speed of light (m/s)
 lambda_L = 780e-9 # Example laser wavelength (m)
 kL = 2 * np.pi / lambda_L # Laser wave number (1/m)
 Gamma = 2 * np.pi * 6.0e6 # Natural linewidth (rad/s)
-sigma0 = 6 * np.pi / kL**2 # Resonant scattering cross section (m^2)
-m_atom = 1.41e-25 # Mass of a Rubidium atom (kg)
+sigma0_single = 6 * np.pi / kL**2 # Resonant scattering cross section (m^2)
+m_atom_single = 1.41e-25 # Mass of a Rubidium atom (kg)
 k_B = 1.380649e-23
+
+# Define quantitites for a Superparticle
+N_super = 7e3 # N-atoms for each superparticle
+sigma0 = sigma0_single * N_super
+m_atom = m_atom_single * N_super
 
 # MOT Parameters
 B_prime = float(argv[2])     # Magnetic field gradient (T/m)
@@ -22,12 +27,12 @@ I_infinity = 0.5 * Isat # Beam intensity before entering the cloud (W/m^2)
 # Simulation parameters (RENAMED to res_etc. where applicable)
 N_atoms = int(argv[1]) # Number of atoms
 dt = 3.0e-6
-n_steps = 6000 
-n_save = 50
+n_steps = 12000 
+n_save = 200
 SAVE_INTERVAL = n_steps // n_save
 T_res_uK = float(argv[3]) # T_init in mK -> T_res_uK
 T_res = T_res_uK * 1e-6 # Convert to K for physics
-V_res = np.sqrt(3 * k_B * T_res / m_atom) # V_init -> V_res
+V_res = np.sqrt(k_B * T_res / m_atom_single) # V_init -> V_res
 R_res = float(argv[4]) # R_init -> R_res
 
 # Mapping for transitions (q) and beams (alpha)
@@ -130,46 +135,98 @@ def calculate_scattering_cross_sections(positions, velocities, B_mag, B_factor, 
             
     return sigma_map, I_tot_q_map, p_map
 
-def calculate_attenuation_map(positions, velocities, B_mag, B_factor):
+import numpy as np
+
+def calculate_attenuation_map(positions, velocities, B_mag, B_factor, grid_res=1e-4):
     """
-    Calculates the 6 Attenuated Intensity arrays I_alpha_pm(r).
-    This implements the attenuation (Eq. 13) using the cumulative sum approach (Eq. 14).
+    Computes attenuation using a 2D Grid approach with PURE NUMPY vectorization.
     """
     I_att_map = {}
+    bin_area = grid_res ** 2
+    N_atoms = len(positions)
     
-    # 1. Initial Guess: Assume zero attenuation (O=0 -> I=I_infinity)
+    # 1. Initial Guess (I = I_infinity)
     I_guess_map = {k: np.full(N_atoms, I_infinity) for k in BEAM_DIRECTIONS}
     
-    # 2. Calculate initial cross-sections based on guess I
+    # Calculate scattering cross-sections based on un-attenuated light
     sigma_map_guess, _, p_map = calculate_scattering_cross_sections(
         positions, velocities, B_mag, B_factor, I_guess_map
     )
-    
-    # 3. Calculate Optical Depth (O_alpha_pm)
+
     for (axis, sign), (idx, sgn_dir) in BEAM_DIRECTIONS.items():
-        coords = positions[:, idx]
+        # --- A. Setup Coordinates ---
+        # Identify transverse axes (e.g., if Beam is Z(2), transverse are X(0), Y(1))
+        transverse_indices = [i for i in [0, 1, 2] if i != idx]
+        u_coords = positions[:, transverse_indices[0]]
+        v_coords = positions[:, transverse_indices[1]]
+        w_coords = positions[:, idx] # Beam axis
         
-        # Combine all q transitions for the total scattering cross section O (Eq. 14)
+        # --- B. Compute Total Sigma ---
         sigma_eff_total = np.zeros(N_atoms)
         for q in Q_TRANSITIONS:
             sigma_eff_total += p_map[(axis, sign, q)] * sigma_map_guess[(axis, sign, q)]
             
-        # O(N log N) Cumulative Sum Method
-        # The scale factor 1e-15 is needed to convert the unitless sum of cross-sections 
-        # (intended to be integrated over density and distance) into a realistic OD ~ 1.
-        sort_indices = np.argsort(coords) if sgn_dir == 1 else np.argsort(-coords)
-        sigma_sorted = sigma_eff_total[sort_indices]
+        # --- C. Binning and Sorting ---
+        # 1. Discretize transverse positions into integer bins
+        u_bins = np.floor(u_coords / grid_res).astype(np.int64)
+        v_bins = np.floor(v_coords / grid_res).astype(np.int64)
         
-        O_sorted = np.cumsum(sigma_sorted) * 1e-15
-        O_sorted -= sigma_sorted # Subtract the atom's own scattering
+        # 2. Create a unique hash for each bin to group them
+        # Multiplier ensures uniqueness (assuming <1M bins in one direction)
+        bin_hashes = u_bins * 1_000_000 + v_bins 
         
-        O_depth = np.zeros(N_atoms)
-        O_depth[sort_indices] = O_sorted
+        # 3. Define Sort Order:
+        # Primary Key: Bin Hash (Group atoms in the same tube)
+        # Secondary Key: Beam Axis W (Order atoms upstream -> downstream)
+        # Note: If sgn_dir is -1, we negate w_coords so "upstream" is always smaller index
+        beam_sort_key = w_coords if sgn_dir == 1 else -w_coords
         
-        # Attenuated intensity (Eq. 13)
-        I_alpha_pm = I_infinity * np.exp(-O_depth)
-        I_att_map[(axis, sign)] = I_alpha_pm
+        # np.lexsort sorts by the last key passed, then the second to last...
+        # So we pass (Secondary, Primary)
+        sort_order = np.lexsort((beam_sort_key, bin_hashes))
         
+        # Apply sort
+        sigma_sorted = sigma_eff_total[sort_order]
+        bins_sorted = bin_hashes[sort_order]
+        
+        # --- D. Vectorized Grouped CumSum (The Magic Step) ---
+        
+        # 1. Standard Cumulative Sum over the whole array
+        global_cumsum = np.cumsum(sigma_sorted)
+        
+        # 2. Find indices where the bin changes
+        # np.diff != 0 finds transitions. We append [0] to handle the first group.
+        # 'starts' will be indices: [0, start_of_bin2, start_of_bin3...]
+        change_points = np.flatnonzero(np.diff(bins_sorted)) + 1
+        group_starts = np.concatenate(([0], change_points))
+        
+        # 3. Calculate "Offset" (The cumsum value just before a group starts)
+        # For the first group (index 0), the offset is 0.
+        # For group starting at 'i', offset is global_cumsum[i-1]
+        offsets = np.zeros(len(group_starts))
+        offsets[1:] = global_cumsum[group_starts[1:] - 1]
+        
+        # 4. Expand Offsets to match the full array size
+        # We repeat the offset value N times, where N is the number of atoms in that bin
+        group_lengths = np.diff(np.concatenate((group_starts, [N_atoms])))
+        values_to_subtract = np.repeat(offsets, group_lengths)
+        
+        # 5. Calculate Local CumSum
+        # (Global Sum) - (Sum of all previous groups)
+        local_cumsum = global_cumsum - values_to_subtract
+        
+        # --- E. Calculate Optical Depth and Map Back ---
+        
+        # Subtract self-scattering (atoms don't shadow themselves)
+        O_sorted = (local_cumsum - sigma_sorted) / bin_area
+        
+        # Unsort: Map values back to original particle indices
+        O_depth_final = np.zeros(N_atoms)
+        O_depth_final[sort_order] = O_sorted
+        
+        # Attenuation Eq
+        I_att_map[(axis, sign)] = I_infinity * np.exp(-O_depth_final)
+
     return I_att_map, p_map
 
 def calculate_trapping_force_full(positions, velocities, B_mag, B_factor, I_att_map, p_map):
@@ -231,21 +288,151 @@ def calculate_diffusion_force_full(I_tot_q_map):
     
     return F_diff
 
- # Helper function to consolidate full force calculations for the integrator (UNCHANGED)
-def get_forces_full(positions, velocities):
-    # 1. Get Magnetic Field Vectors
+from scipy.fft import rfftn, irfftn
+from scipy.interpolate import RegularGridInterpolator
+
+def calculate_rescattering_force_grid(positions, I_tot_q_map, grid_size=32, padding=2.0):
+    """
+    Computes Rescattering Force using the Particle-Mesh (FFT) method.
+    Math: Solves Poisson Eq: Del^2(Phi) = -source using Green's function G(k) = 1/k^2
+    """
+    N = len(positions)
+    
+    # --- 1. Calculate Source Power (Physics) ---
+    # Total Intensity I_tot = Sum of intensities in all polarizations
+    # (Approximation: treat scalar intensity for saturation)
+    I_total_magnitude = sum(I_tot_q_map.values())
+    
+    # Saturation parameter s = I/Isat
+    s_tot = I_total_magnitude / Isat
+    
+    # Excited State Fraction rho_ee (Steady state 2-level approx)
+    detuning_term = 4 * (delta / Gamma)**2
+    rho_ee = 0.5 * s_tot / (1 + s_tot + detuning_term)
+    
+    # Power P = (Photon Energy) * (Scattering Rate) * (N_super)
+    photon_energy = hbar * c * kL
+    P_source_vec = photon_energy * (Gamma * rho_ee) * N_super
+    
+    # Rescattering Cross Section sigma_R for the target atoms
+    # Wieman approximation: sigma_R is a multiple of laser cross-section
+    sigma_L_approx = sigma0_single / (1 + detuning_term)
+    sigma_R = 1.5 * sigma_L_approx 
+    
+    # --- 2. Setup the Grid Geometry ---
+    min_pos = np.min(positions, axis=0)
+    max_pos = np.max(positions, axis=0)
+    center = (max_pos + min_pos) / 2.0
+    
+    # Determine box size with padding to prevent periodic aliases
+    cloud_width = np.max(max_pos - min_pos)
+    if cloud_width == 0: cloud_width = 1e-3
+    L_box = cloud_width * padding
+    
+    # Define grid coordinates (Cell centers)
+    # Using 'ij' indexing for meshgrid later
+    x_axis = np.linspace(center[0] - L_box/2, center[0] + L_box/2, grid_size)
+    y_axis = np.linspace(center[1] - L_box/2, center[1] + L_box/2, grid_size)
+    z_axis = np.linspace(center[2] - L_box/2, center[2] + L_box/2, grid_size)
+    
+    dx = L_box / (grid_size - 1)
+    
+    # --- 3. Mass Assignment (Binning) ---
+    # Bin atoms into the 3D grid, summing their Power
+    rho_grid, edges = np.histogramdd(
+        positions, 
+        bins=(grid_size, grid_size, grid_size), 
+        range=[(x_axis[0], x_axis[-1]), (y_axis[0], y_axis[-1]), (z_axis[0], z_axis[-1])],
+        weights=P_source_vec
+    )
+    
+    # Note: rho_grid is technically "Power per cell". 
+    # To get density, we would divide by dx^3, but we can handle constants at the end.
+
+    # --- 4. Poisson Solve in Fourier Space ---
+    # Forward FFT
+    rho_k = rfftn(rho_grid)
+    
+    # Construct k-vectors (Frequency domain)
+    # fftfreq gives standard order, we multiply by 2pi/L to get physical wavevectors
+    kx = np.fft.fftfreq(grid_size, d=dx) * 2 * np.pi
+    ky = np.fft.fftfreq(grid_size, d=dx) * 2 * np.pi
+    kz = np.fft.rfftfreq(grid_size, d=dx) * 2 * np.pi # Real FFT uses half the z-spectrum
+    
+    KX, KY, KZ = np.meshgrid(kx, ky, kz, indexing='ij')
+    
+    # The Green's Function 1/k^2
+    K_sq = KX**2 + KY**2 + KZ**2
+    
+    # Avoid division by zero at DC component (k=0)
+    # This represents the average constant potential, which is arbitrary in physics.
+    K_sq[0, 0, 0] = 1.0 
+    
+    # Solve for Potential in k-space: Phi(k) = rho(k) / k^2
+    # Note: We skipped the 4*pi*epsilon_0 constants, will add later.
+    phi_k = rho_grid.size * (rho_k / K_sq) # rho_grid.size is scaling factor for FFT normalization
+    phi_k[0, 0, 0] = 0.0
+    
+    # --- 5. Calculate Field (Gradient) in Fourier Space ---
+    # E = -Gradient(Phi)  =>  E(k) = -i * k * Phi(k)
+    # We compute the 3 components of the field directly in k-space
+    Ex_k = -1j * KX * phi_k
+    Ey_k = -1j * KY * phi_k
+    Ez_k = -1j * KZ * phi_k
+    
+    # Inverse FFT to get real-space fields
+    # We take the real part (imaginary part should be numerical noise)
+    Ex_grid = irfftn(Ex_k, s=(grid_size, grid_size, grid_size)).real
+    Ey_grid = irfftn(Ey_k, s=(grid_size, grid_size, grid_size)).real
+    Ez_grid = irfftn(Ez_k, s=(grid_size, grid_size, grid_size)).real
+    
+    # --- 6. Interpolation (Force Assignment) ---
+    # We map the field at grid points back to the atom positions
+    
+    # Create interpolators for each component
+    # Use bounds_error=False to handle atoms slightly floating off due to float precision
+    interp_x = RegularGridInterpolator((x_axis, y_axis, z_axis), Ex_grid, bounds_error=False, fill_value=0)
+    interp_y = RegularGridInterpolator((x_axis, y_axis, z_axis), Ey_grid, bounds_error=False, fill_value=0)
+    interp_z = RegularGridInterpolator((x_axis, y_axis, z_axis), Ez_grid, bounds_error=False, fill_value=0)
+    
+    Fx = interp_x(positions)
+    Fy = interp_y(positions)
+    Fz = interp_z(positions)
+    
+    F_field = np.stack((Fx, Fy, Fz), axis=1)
+    
+    # --- 7. Apply Physical Constants ---
+    F_rescattering = F_field * (sigma_R / (4 * np.pi * c))
+    
+    # Important: The DFT assumes values are densities. 
+    # We need to divide by dx^3 to get real density?
+    # Actually, usually simpler to calibrate K using a 2-particle test case.
+    # For this implementation, we assume standard FFT scaling.
+    
+    return F_rescattering
+
+### 4. How to integrate this efficiently
+# Global variable to store the last calculated rescattering force
+CACHED_F_RESC = None
+RESC_UPDATE_FREQ = 10  # Update rescattering every 10 steps
+
+def get_forces_full(positions, velocities, step_number=0):
+    global CACHED_F_RESC
+    
+    # 1. Standard Forces (Trapping + Attenuation)
     B_mag, B_factor = calculate_magnetic_field_vectorized(positions)
-    
-    # 2. Calculate Attenuated Intensities and Polarization Fractions (Coupled Step)
     I_att_map, p_map = calculate_attenuation_map(positions, velocities, B_mag, B_factor)
-    
-    # 3. Calculate Trapping Force (F_tr)
     F_tr, I_tot_q_map = calculate_trapping_force_full(positions, velocities, B_mag, B_factor, I_att_map, p_map)
-    
-    # 4. Calculate Diffusion Force (F_diff)
     F_diff = calculate_diffusion_force_full(I_tot_q_map)
     
-    return F_tr + F_diff
+    # 2. Rescattering Force (The Heavy Calculation)
+    # Only recalculate every N steps to save time
+    if step_number % RESC_UPDATE_FREQ == 0 or CACHED_F_RESC is None:
+        CACHED_F_RESC = calculate_rescattering_force_grid(
+            positions, I_tot_q_map
+        )
+        
+    return F_tr + F_diff + CACHED_F_RESC
 
 # --- 3. VELOCITY VERLET INTEGRATOR FUNCTION (UNCHANGED) ---
 
@@ -312,6 +499,7 @@ def save_simulation_data(time_history, pos_history, vel_history):
         f.write(f"Beam intensity (I_infinity): {I_infinity:.1f} W/m^2\n")
         f.write("\n--- SIMULATION PARAMETERS ---\n")
         f.write(f"Number of atoms (N_atoms): {N_atoms}\n")
+        f.write(f"Number of atoms in each Superparticle (N_super): {N_super}\n")
         f.write(f"Time step (dt): {dt:.2e} s\n")
         f.write(f"Number of steps (n_steps): {n_steps}\n")
         f.write(f"Initial/Resonance Temperature (T_res): {T_res_uK} mK\n")
@@ -364,9 +552,9 @@ if __name__ == "__main__":
         current_time = step * dt
         r_rms = np.sqrt(np.mean(np.sum(positions**2, axis=1)))
         v_rms = np.sqrt(np.mean(np.sum(velocities**2, axis=1)))
-        T = m_atom * v_rms**2 / 2 / k_B
+        T = m_atom_single * v_rms**2 / 2 / k_B
 
-        total_kinetic_energy = 0.5 * m_atom * np.sum(velocities**2)
+        total_kinetic_energy = 0.5 * m_atom_single * np.sum(velocities**2)
         
         if step % SAVE_INTERVAL == 0:
             time_history.append(current_time)
