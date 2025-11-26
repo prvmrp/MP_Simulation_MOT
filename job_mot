@@ -16,5 +16,5 @@ R_init=$4
 #>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
 # running
 source ./venv/bin/activate
-python3 simulation.py $N $B_prime $T_init $R_init
+python3 mot_simulation.py $N $B_prime $T_init $R_init
 
