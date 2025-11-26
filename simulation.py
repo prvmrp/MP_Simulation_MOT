@@ -22,8 +22,8 @@ I_infinity = 0.5 * Isat # Beam intensity before entering the cloud (W/m^2)
 # Simulation parameters (RENAMED to res_etc. where applicable)
 N_atoms = int(argv[1]) # Number of atoms
 dt = 3.0e-6
-n_steps = 6000 
-n_save = 50
+n_steps = 20000 
+n_save = 100
 SAVE_INTERVAL = n_steps // n_save
 T_res_uK = float(argv[3]) # T_init in mK -> T_res_uK
 T_res = T_res_uK * 1e-6 # Convert to K for physics
