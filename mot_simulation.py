@@ -29,6 +29,7 @@ N_atoms = int(argv[1]) # Number of atoms
 dt = 3.0e-6
 n_steps = 12000 
 n_save = 200
+
 SAVE_INTERVAL = n_steps // n_save
 T_res_uK = float(argv[3]) # T_init in mK -> T_res_uK
 T_res = T_res_uK * 1e-6 # Convert to K for physics
