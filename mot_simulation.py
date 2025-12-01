@@ -318,7 +318,8 @@ def calculate_rescattering_force_grid(positions, I_tot_q_map, grid_size=32, padd
     # Rescattering Cross Section sigma_R for the target atoms
     # Wieman approximation: sigma_R is a multiple of laser cross-section
     sigma_L_approx = sigma0_single / (1 + detuning_term)
-    sigma_R = 1.5 * sigma_L_approx 
+    coeff_R = 2 # sets the strength of rescattering
+    sigma_R = coeff_R * sigma_L_approx 
     
     # --- 2. Setup the Grid Geometry ---
     min_pos = np.min(positions, axis=0)
