@@ -1,3 +1,4 @@
 .ssh/
 .venv/
 __pycache__
+*npz
