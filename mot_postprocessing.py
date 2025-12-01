@@ -8,7 +8,7 @@ import subprocess
 import sys
 import re
 from typing import Optional, Union
-from simulation import *
+from mot_simulation import *
 
 # Try to import imageio for GIF creation, but allow the script to run without it
 try:
