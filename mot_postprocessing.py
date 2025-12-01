@@ -4,7 +4,15 @@ import matplotlib.animation as animation
 import os
 import sys
 import re
-from typing import Optional
+from typing import Optional, Union
+from mot_simulation import *
+
+# Try to import imageio for GIF creation, but allow the script to run without it
+try:
+    import imageio.v2 as iio
+    IMAGEIO_AVAILABLE = True
+except ImportError:
+    IMAGEIO_AVAILABLE = False
 
 # --- CONFIGURATION & CONSTANTS ---
 BASE_DATA_FILENAME = 'mot_data_full.npz' 
