@@ -120,5 +120,6 @@ All analysis results (figures and the GIF) are saved **directly into the origina
       * Ensure you have the `pillow` library installed (`pip install pillow`).
 
 ## To Do
-1) Introduce superatoms, to account for the fact that you have actually 10^8 atoms, and not 10^4
-2) Are Clebsh-Gordan coefficients needed?
+1) Are Clebsh-Gordan coefficients needed?
+2) Add ODT
+3) Add 1530
