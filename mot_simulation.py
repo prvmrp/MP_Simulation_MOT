@@ -1,16 +1,17 @@
 import numpy as np
 from sys import argv
 import os
+from scipy import constants as si
 
 # --- 1. PHYSICAL CONSTANTS AND MOT PARAMETERS ---
-hbar = 1.054e-34  # Reduced Planck constant (J*s)
-c = 3.0e8         # Speed of light (m/s)
+hbar = si.hbar  # Reduced Planck constant (J*s)
+c = si.c         # Speed of light (m/s)
 lambda_L = 780e-9 # Example laser wavelength (m)
 kL = 2 * np.pi / lambda_L # Laser wave number (1/m)
 Gamma = 2 * np.pi * 6.0e6 # Natural linewidth (rad/s)
 sigma0_single = 6 * np.pi / kL**2 # Resonant scattering cross section (m^2)
-m_atom_single = 1.41e-25 # Mass of a Rubidium atom (kg)
-k_B = 1.380649e-23
+m_atom_single = 87 * si.physical_constants['atomic mass constant'][0] # Mass of a Rubidium atom (kg)
+k_B = si.k
 
 # Define quantitites for a Superparticle
 N_super = 7e3 # N-atoms for each superparticle
@@ -19,16 +20,17 @@ m_atom = m_atom_single * N_super
 
 # MOT Parameters
 B_prime = float(argv[2])     # Magnetic field gradient (T/m)
-mu = 1.399e10     # Gyromagnetic ratio (Hz/T, placeholder for simplicity)
+mu = si.physical_constants['Bohr magneton in Hz/T'][0]     # Gyromagnetic ratio (Hz/T, placeholder for simplicity)
 delta = -2.5 * Gamma # Laser detuning (rad/s)
+dg2 = 2.5**2 # (delta/Gamma)**2, needed over and over in the code 
 Isat = 16.7       # Saturation intensity (W/m^2)
 I_infinity = 0.5 * Isat # Beam intensity before entering the cloud (W/m^2)
 
 # Simulation parameters (RENAMED to res_etc. where applicable)
 N_atoms = int(argv[1]) # Number of atoms
-dt = 3.0e-6
-n_steps = 12000 
-n_save = 200
+dt = 100.0e-6
+n_steps =2500 
+n_save = 100
 
 SAVE_INTERVAL = n_steps // n_save
 T_res_uK = float(argv[3]) # T_init in mK -> T_res_uK
@@ -54,21 +56,14 @@ def calculate_magnetic_field_vectorized(r_positions):
     x, y, z = r_positions.T
     
     # B(r) magnitude (Eq. 4)
-    B_mag = B_prime * np.sqrt(x**2 + 0.25 * (y**2 + z**2))
+    r_mag = np.sqrt(x**2 + 0.25 * (y**2 + z**2))
+    B_mag = B_prime * r_mag
     
     # Magnetic factor for polarization fractions (alpha' * B' / 2*B(r))
-    B_factor = np.zeros_like(r_positions)
-    B_factor[:, 0] = -2 * x / (2 * B_mag)    # x-axis factor (alpha'=2x)
-    B_factor[:, 1] = y / (2 * B_mag)    # y-axis factor (alpha'=y)
-    B_factor[:, 2] = z / (2 * B_mag) # z-axis factor (alpha'=z)
-    
-    # Handle division by zero at origin (use a tiny value)
-    B_mag[B_mag == 0] = 1e-12 
-    B_factor[B_mag == 1e-12] = 0
-    B_factor *= B_prime
-    
-    if B_mag.shape[0] != N_atoms:
-        raise ValueError(f"B_mag shape ({B_mag.shape[0]}) does not match N_atoms ({N_atoms}).")
+    B_factor = np.empty_like(r_positions)
+    B_factor[:, 0] = np.where(r_mag, -x / r_mag, 0)    # x-axis factor (alpha'=2x)
+    B_factor[:, 1] = np.where(r_mag, y / (2 * r_mag), 0)    # y-axis factor (alpha'=y)
+    B_factor[:, 2] = np.where(r_mag, z / (2 * r_mag), 0) # z-axis factor (alpha'=z)
     
     return B_mag, B_factor # (N_atoms,), (N_atoms, 3)
 
@@ -83,8 +78,10 @@ def calculate_polarization_fractions(B_factor):
         B_alpha_factor = B_factor[:, idx]
         
         # Core terms for sigma+ and sigma- (Eq. 4)
-        term_pos = 0.25 * (1 + sgn_dir * B_alpha_factor)**2
-        term_neg = 0.25 * (1 - sgn_dir * B_alpha_factor)**2
+        term_pos = 1. + B_alpha_factor if sgn_dir > 0 else 1. - B_alpha_factor
+        term_neg = 1. - B_alpha_factor if sgn_dir > 0 else 1. + B_alpha_factor
+        term_pos = 0.25 * term_pos**2
+        term_neg = 0.25 * term_neg**2
         
         # Assign q=+ and q=- based on MOT helicity convention:
         if axis == 'x':
@@ -109,24 +106,29 @@ def calculate_scattering_cross_sections(positions, velocities, B_mag, B_factor, 
     p_map = calculate_polarization_fractions(B_factor)
     sigma_map = {}
     I_tot_q_map = {q: np.zeros(N_atoms) for q in Q_TRANSITIONS}
+    Zeeman_shift = mu * B_mag 
     
     for (axis, sign), (idx, sgn_dir) in BEAM_DIRECTIONS.items():
         I_alpha_pm = I_att_map[(axis, sign)] # Attenuated Intensity (N_atoms,)
         
         v_alpha = velocities[:, idx]
         kLv_alpha = kL * v_alpha
-        Doppler_shift = -sgn_dir * kLv_alpha # +/- kL * v_alpha
-        
+        Doppler_shift = -kLv_alpha if sgn_dir > 0 else kLv_alpha # +/- kL * v_alpha
+        detuning = delta + Doppler_shift
+            
         for q in Q_TRANSITIONS:
             # Zeeman shift: mu * B(r) * q
-            Zeeman_shift = mu * B_mag * q 
-            
-            # Total detuning (rad/s)
-            detuning_q = delta + Doppler_shift + Zeeman_shift
+
+            if q > 0:
+                detuning_q = detuning + Zeeman_shift
+            elif q < 0:
+                detuning_q = detuning - Zeeman_shift
+            else:
+                detuning_q = detuning
             
             # Non-iterative cross section approximation (I_tot_q in denominator removed)
             # sigma_0 / (1 + 4 * detuning_q^2 / Gamma^2)
-            sigma_alpha_pm_q = sigma0 / (1 + (4 * detuning_q**2) / Gamma**2)
+            sigma_alpha_pm_q = sigma0 / (1 + ((2 * detuning_q) / Gamma)**2)
             
             sigma_map[(axis, sign, q)] = sigma_alpha_pm_q
             
@@ -160,7 +162,7 @@ def calculate_attenuation_map(positions, velocities, B_mag, B_factor, grid_res=1
         transverse_indices = [i for i in [0, 1, 2] if i != idx]
         u_coords = positions[:, transverse_indices[0]]
         v_coords = positions[:, transverse_indices[1]]
-        w_coords = positions[:, idx] # Beam axis
+        w_coords = positions[:, idx] Beam axis
         
         # --- B. Compute Total Sigma ---
         sigma_eff_total = np.zeros(N_atoms)
@@ -169,18 +171,19 @@ def calculate_attenuation_map(positions, velocities, B_mag, B_factor, grid_res=1
             
         # --- C. Binning and Sorting ---
         # 1. Discretize transverse positions into integer bins
-        u_bins = np.floor(u_coords / grid_res).astype(np.int64)
-        v_bins = np.floor(v_coords / grid_res).astype(np.int64)
+        u_bins = np.floor(u_coords / grid_res).astype(np.int32)
+        v_bins = np.floor(v_coords / grid_res).astype(np.int32)
         
         # 2. Create a unique hash for each bin to group them
         # Multiplier ensures uniqueness (assuming <1M bins in one direction)
-        bin_hashes = u_bins * 1_000_000 + v_bins 
+        nshift = 10 ** np.ceil(np.log10(np.max(np.abs(v_bins))))
+        bin_hashes = u_bins * nshift + v_bins 
         
         # 3. Define Sort Order:
         # Primary Key: Bin Hash (Group atoms in the same tube)
         # Secondary Key: Beam Axis W (Order atoms upstream -> downstream)
         # Note: If sgn_dir is -1, we negate w_coords so "upstream" is always smaller index
-        beam_sort_key = w_coords if sgn_dir == 1 else -w_coords
+        beam_sort_key = w_coords if sgn_dir > 0 else -w_coords
         
         # np.lexsort sorts by the last key passed, then the second to last...
         # So we pass (Secondary, Primary)
@@ -227,7 +230,10 @@ def calculate_attenuation_map(positions, velocities, B_mag, B_factor, grid_res=1
         
         # Attenuation Eq
         I_att_map[(axis, sign)] = I_infinity * np.exp(-O_depth_final)
-
+    
+#    for (axis, sign), (idx, sgn_dir) in BEAM_DIRECTIONS.items():
+#        I_att_map[(axis, sign)] = I_infinity
+    
     return I_att_map, p_map
 
 def calculate_trapping_force_full(positions, velocities, B_mag, B_factor, I_att_map, p_map):
@@ -253,12 +259,16 @@ def calculate_trapping_force_full(positions, velocities, B_mag, B_factor, I_att_
             sigma_alpha_pm_q = sigma_map[(axis, sign, q)]
             
             # The force direction (sgn_dir) is 1 for + beams, -1 for - beams.
-            force_magnitude = sgn_dir * p_alpha_pm_q * I_alpha_pm * sigma_alpha_pm_q / c
+            force_magnitude = p_alpha_pm_q * I_alpha_pm * sigma_alpha_pm_q 
             
             F_alpha_pm += force_magnitude
-            
-        F_tr[:, idx] += F_alpha_pm
+
+        if sgn_dir > 0:    
+            F_tr[:, idx] += F_alpha_pm
+        else:
+            F_tr[:, idx] -= F_alpha_pm
         
+    F_tr /= c
     return F_tr, I_tot_q_map
 
 def calculate_diffusion_force_full(I_tot_q_map):
@@ -272,20 +282,20 @@ def calculate_diffusion_force_full(I_tot_q_map):
     
     # 2. Diffusion coefficients D_vac and D_las (Eq. 8, 9)
     s_denom = 1 + s_tot
-    s_denom_sq = s_denom**2
-    s_denom_cu = s_denom_sq * s_denom
+    s_denom_cu = s_denom**3
     
-    D_vac = (hbar * kL)**2 / 4 * s_tot / s_denom # (Eq. 8)
+    D_vac = (hbar * kL)**2 * Gamma / 4 * s_tot / s_denom # (Eq. 8)
     
     # Simplified D_las (Approx. Eq. 9)
-    D_las_numerator = (1 + 1/2 * (delta/Gamma)**2 * s_tot + 2 * s_tot * s_tot / s_denom)
-    D_las = (hbar * kL)**2 / 4 * s_tot / s_denom_cu * D_las_numerator 
+    #D_las_numerator = (1 + 1/2 * (delta/Gamma)**2 * s_tot + 2 * s_tot * s_tot / s_denom)
+    D_las_numerator = (1 + s_tot * ( (12 * dg2  - 1) / (4 * dg2 + 1) + s_tot))
+    D_las = (hbar * kL)**2 * Gamma / 4 * s_tot / s_denom_cu * D_las_numerator 
     
     D_tot = D_vac + D_las # (N_atoms,) array (Eq. 7)
     
     # 3. Diffusion Force (F_diff)
-    random_noise = np.random.randn(D_tot.shape[0], 3)
-    F_diff = np.sqrt(2 * D_tot / dt)[:, np.newaxis] * random_noise
+    random_noise = np.random.normal(size=(D_tot.shape[0], 3))
+    F_diff = N_super * np.sqrt(D_tot / dt / 12.)[:, np.newaxis] * random_noise
     
     return F_diff
 
@@ -308,7 +318,7 @@ def calculate_rescattering_force_grid(positions, I_tot_q_map, grid_size=32, padd
     s_tot = I_total_magnitude / Isat
     
     # Excited State Fraction rho_ee (Steady state 2-level approx)
-    detuning_term = 4 * (delta / Gamma)**2
+    detuning_term = 4 * dg2
     rho_ee = 0.5 * s_tot / (1 + s_tot + detuning_term)
     
     # Power P = (Photon Energy) * (Scattering Rate) * (N_super)
@@ -435,6 +445,7 @@ def get_forces_full(positions, velocities, step_number=0):
         )
         
     return F_tr + F_diff + CACHED_F_RESC
+#    return F_tr + F_diff
 
 # --- 3. VELOCITY VERLET INTEGRATOR FUNCTION (UNCHANGED) ---
 
@@ -527,7 +538,8 @@ def save_simulation_data(time_history, pos_history, vel_history):
 
 if __name__ == "__main__":
 
-    # Initial state
+    # Initial state    
+    np.random.seed(12345) #use a reproducible state for now
     positions = np.random.normal(0.0, R_res, (N_atoms, 3))
     velocities = np.random.normal(0.0, V_res, (N_atoms, 3))
 
@@ -537,7 +549,7 @@ if __name__ == "__main__":
     vel_history = []
 
     print(f"Starting LOW-DENSITY (N={N_atoms}) MOT Simulation...")
-    print(f"Initial Conditions (T_res): {T_res_uK} mK ({V_res:.2e} m/s RMS) and (R_res): {R_res:.2e} m RMS.")
+    print(f"Initial Conditions (T_res): {T_res_uK} uK ({V_res:.2e} m/s RMS) and (R_res): {R_res:.2e} m RMS.")
 
     for step in range(n_steps):
         
@@ -552,9 +564,10 @@ if __name__ == "__main__":
         
         # Record history (UNCHANGED)
         current_time = step * dt
-        r_rms = np.sqrt(np.mean(np.sum(positions**2, axis=1)))
-        v_rms = np.sqrt(np.mean(np.sum(velocities**2, axis=1)))
-        T = m_atom_single * v_rms**2 / 2 / k_B
+        r_rms = np.std(positions) 
+        v_rms = np.std(velocities)
+
+        T = m_atom_single * v_rms**2 / k_B
 
         total_kinetic_energy = 0.5 * m_atom_single * np.sum(velocities**2)
         
@@ -563,7 +576,7 @@ if __name__ == "__main__":
             pos_history.append(positions.copy())
             vel_history.append(velocities.copy())
         
-        if step % 1000 == 0: 
+        if step % 10 == 0:
             print(f"Time {current_time:.2e} s: R_RMS = {r_rms:.2e} m, V_RMS = {v_rms:.2e} m/s, T = {T*1e6:.2f} uK")
 
     print("\nSimulation Finished.")
